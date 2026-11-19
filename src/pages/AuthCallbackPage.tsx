@@ -37,13 +37,13 @@ export const AuthCallbackPage: React.FC = () => {
 
         if (data?.session) {
           // Successfully authenticated!
-          navigate('/dashboard', { replace: true });
+          navigate('/profile', { replace: true });
         } else {
           // If session wasn't immediately synchronous, wait briefly or listen to onAuthStateChange
           const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
               authListener.subscription.unsubscribe();
-              navigate('/dashboard', { replace: true });
+              navigate('/profile', { replace: true });
             }
           });
 
@@ -53,7 +53,7 @@ export const AuthCallbackPage: React.FC = () => {
             // Check once more
             supabase.auth.getSession().then(({ data: fallbackData }) => {
               if (fallbackData?.session) {
-                navigate('/dashboard', { replace: true });
+                navigate('/profile', { replace: true });
               } else {
                 setErrorMessage(
                   'No active session could be deciphered from the ether. Please attempt authentication once more.'

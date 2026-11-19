@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, LayoutDashboard, Sparkles } from 'lucide-react';
+import { LogOut, LayoutDashboard, Sparkles, Users } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { GothicButton } from '../ui/GothicButton';
 
@@ -44,12 +44,21 @@ export const Navbar: React.FC = () => {
             <Link to="/" className="hover:text-purple-200 transition-colors">
               The Sanctuary
             </Link>
-            <a href="#features" className="hover:text-purple-200 transition-colors">
-              Ethereal Powers
-            </a>
-            <a href="#lore" className="hover:text-purple-200 transition-colors">
-              The Lore
-            </a>
+            {user ? (
+              <a href="/dashboard#friends-hub" className="hover:text-purple-200 transition-colors flex items-center gap-1.5 text-purple-300">
+                <Users className="w-4 h-4 text-purple-400" />
+                <span>Coven Friends</span>
+              </a>
+            ) : (
+              <>
+                <a href="#features" className="hover:text-purple-200 transition-colors">
+                  Ethereal Powers
+                </a>
+                <a href="#lore" className="hover:text-purple-200 transition-colors">
+                  The Lore
+                </a>
+              </>
+            )}
             <a href="#oauth-guide" className="hover:text-purple-200 transition-colors flex items-center gap-1 text-purple-400">
               <Sparkles className="w-3.5 h-3.5" />
               OAuth Portal
