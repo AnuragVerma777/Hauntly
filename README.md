@@ -1,33 +1,86 @@
-# 🦇 Hauntly - Spooky Social Messaging
+# 🦇 Hauntly — Spooky Social Messaging & 3D Celestial Coven
 
-> *Where spirits converse in the shadows, fortified by Supabase and wrapped in a premium dark gothic aesthetic.*
+<div align="center">
 
-Hauntly is a nocturnal social messaging web application crafted with **React**, **TypeScript**, **Vite**, **Tailwind CSS**, and the official **Supabase** JavaScript client.
+[![Live Demo](https://img.shields.io/badge/🔮_Try_Hauntly_Live-hauntly--eight.vercel.app-9333ea?style=for-the-badge&logo=vercel&logoColor=white)](https://hauntly-eight.vercel.app/login)
+[![React 19](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-Realtime_Auth_&_DB-3ecf8e?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Gemini AI](https://img.shields.io/badge/Google_Gemini-Spectral_AI-4285f4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
+
+> *Where nocturnal spirits converse in the shadows, navigate a 3D nighttime Earth, and commune through Google Gemini AI — fortified by Supabase.*
+
+**[✨ Launch Live Demo (Try It Now)](https://hauntly-eight.vercel.app/login)** • **[Explore Features](#-features)** • **[Quick Start](#-quick-start)** • **[Architecture](#-project-architecture)**
+
+</div>
 
 ---
 
-## 🔮 Features
+## 🔮 Live Try-On
 
-- **Premium Dark Gothic Design**: Obsidian `#07040c` backgrounds, deep violet velvet accents, ethereal glowing borders, spectral particle animations, and clean typography.
-- **Official Supabase Client**: Zero-mock, production-ready integration with `@supabase/supabase-js`.
-- **Email & Password Authentication**: Full sign up and sign in rituals with password strength indicators ("Faint Spirit" to "Ancient Sovereign") and email confirmation notices.
-- **Sign In with Google (OAuth)**: Native Supabase OAuth redirection flow with offline consent.
-- **Sign In with Apple (OAuth)**: Native Supabase Apple OAuth integration.
-- **Auth Callback & Session Handling**: Dynamic `/auth/callback` page that seamlessly verifies tokens, handles error redirects, and preserves active sessions in `localStorage`.
-- **Protected Dashboard**: Guards private routes, auto-redirecting unauthenticated wanderers, displaying session status, soul metadata, and real-time JWT indicators.
-- **Interactive Messaging Preview**: "The Crypt", "Midnight Séance", and "Eerie Whispers" channels with live spectral transmission testing.
-- **Built-in Diagnostics & Setup Portal**: Live conduit checker, redirect URL copy utilities, and step-by-step OAuth configuration instructions.
+Experience the full Hauntly application live in your browser:
+
+🔗 **[https://hauntly-eight.vercel.app/login](https://hauntly-eight.vercel.app/login)**
+
+- **Demo Account**: Sign up with any email or sign in directly.
+- **Coven Chat**: Experience real-time whispers and group communication.
+- **3D Night Globe**: Explore coven sanctuaries on a 3D Earth floating in deep space.
+- **Gemini AI**: Right-click messages to translate, summarise, or rewrite in gothic dialects.
+
+---
+
+## 🌌 Key Features
+
+### 1. 🌍 3D Midnight Earth Globe & Celestial Sanctuaries
+- **Pure Deep Space Night Void**: The 3D Earth floats seamlessly in an immersive cosmic starfield with natural twinkling pinpoint stars.
+- **Obsidian & Charcoal Earth Surface**: Deep dark obsidian oceans, slate landmasses, and delicate country boundaries powered by high-speed raster tiles.
+- **Coven Sanctuaries**: Interactive GPS-pinned gothic sanctuaries (Bran Castle, Salem Witch House, Catacombs of Paris) with live coordinates.
+- **Gothic Celestial Compass**: Real-time rotating compass rose with single-click reset to North.
+- **Live Coven Pins**: Amethyst and emerald glowing skull pins representing online companions and sacred sites.
+
+### 2. 💬 Real-Time Messaging & Direct Whispers
+- **2-Way Real-Time Whispers**: Bidirectional 1-on-1 private whispers between distinct users with symmetric conversation keys.
+- **Dynamic Message Alignment**: Your messages glow in violet on the right (`isSelf = true`), while your companion's replies appear on the left with their avatar and name.
+- **Coven Group Chat Rooms**: Multi-member rooms with WhatsApp-style emoji reactions, typing indicators, read receipts, and cursor pagination.
+- **Hybrid Realtime Engine**: Powered by Supabase PostgreSQL Realtime channels (`supabase.channel`) with instant local `BroadcastChannel` fallback for multi-tab testing.
+- **Security & Deletion**: Strict message ownership verification — users can only delete their own transmissions.
+
+### 3. ✨ Google Gemini Spectral AI Features
+- **Right-Click Context Menu**: Spooky desktop right-click and mobile long-press context menu on chat messages.
+- **Spectral Translation**: Real-time translation into 10 languages (Spanish, French, German, Japanese, Hindi, etc.) plus authentic **Gothic Spectral Dialect**.
+- **Message Summarisation**: Condenses long incantations into executive bullet points with automated spooky sentiment classification.
+- **Ghost Rewrite**: Transmutes plain phrases into **Gothic Horror**, **Vampire Lord**, or **Spooky Rhymes**.
+- **Smart Quick Replies**: Instant AI-crafted gothic responses to keep conversations flowing.
+- **In-App API Key Drawer**: Users can supply their free Gemini API key in-app or configure it globally via environment variables.
+
+### 4. 🎃 Coven & Friends Rituals
+- **Permanent Hauntly IDs**: Every user receives a unique, collision-proof ID (e.g. `HAUNT-8X29K`, `HAUNT-VAMP7`) generated by PostgreSQL.
+- **Add Friend Ritual**: Search companions by their Hauntly ID and lift the ceremonial pumpkin to send coven invitations.
+- **Halloween Avatar Vault**: Curated gallery of Halloween avatars (Vampire, Pumpkin King, Frankenstein, Witch, Ghost, etc.).
+- **Relationship Lifecycle**: Send, accept, reject, block, and manage friends with real-time UI synchronization.
+
+### 5. 🛡️ Enterprise Supabase Backend & RLS
+- **Complete SQL Schema** ([supabase/schema.sql](supabase/schema.sql)): 6 core tables (`profiles`, `friendships`, `blocks`, `groups`, `group_members`, `messages`, `message_reactions`).
+- **Collision-Proof ID Generator**: Pl/pgSQL function generating unique alphanumeric IDs.
+- **Row Level Security (RLS)**: Strict security policies ensuring users only access authorized conversations.
+- **Automated Triggers**: Auto-creates public user profiles upon Supabase Auth signup.
 
 ---
 
 ## ⚡ Tech Stack
 
-- **Frontend**: [React 19](https://react.dev/), [TypeScript](https://www.typescriptlang.org/)
-- **Bundler**: [Vite](https://vite.dev/)
-- **Styling**: [Tailwind CSS](https://tailwindcss.com/) with `@tailwindcss/vite`
-- **Backend & Auth**: [Supabase](https://supabase.com/) (`@supabase/supabase-js`)
-- **Icons**: [Lucide React](https://lucide.dev/)
-- **Routing**: [React Router DOM v7](https://reactrouter.com/)
+| Domain | Technology | Description |
+|---|---|---|
+| **Core Framework** | [React 19](https://react.dev/) | Component architecture, hooks, modern state management |
+| **Language** | [TypeScript 5.9](https://www.typescriptlang.org/) | Strict type safety across services, components, and tests |
+| **Styling** | [Tailwind CSS v4](https://tailwindcss.com/) | Ethereal violet glow design system with `@tailwindcss/vite` |
+| **Build Tool** | [Vite 8](https://vite.dev/) | Sub-second HMR and production bundle optimization |
+| **Backend & DB** | [Supabase](https://supabase.com/) | Auth, PostgreSQL database, Realtime subscriptions, RLS |
+| **3D Planetary Engine** | [MapLibre GL JS](https://maplibre.org/) | Perspective 3D Earth globe projection with Esri dark canvas |
+| **AI Engine** | [Google Gemini](https://ai.google.dev/) | `gemini-1.5-flash` REST integration for translation & text generation |
+| **Icons** | [Lucide React](https://lucide.dev/) | Minimalist iconography |
+| **Routing** | [React Router DOM v7](https://reactrouter.com/) | Client-side routing with Vercel & Netlify rewrite rules |
 
 ---
 
@@ -35,163 +88,131 @@ Hauntly is a nocturnal social messaging web application crafted with **React**, 
 
 ```
 Hauntly/
-├── .env.example                # Safe environment variable template
-├── .env                        # Local development variables (git-ignored)
-├── .gitignore                  # Git ignore rules protecting keys & secrets
+├── .env.example                     # Environment template with security notes
+├── .env                             # Local configuration (git-ignored)
+├── vercel.json                      # Vercel SPA routing rewrite rules
 ├── public/
-│   └── favicon.svg             # Glowing violet gothic skull icon
+│   ├── _redirects                   # Netlify & Cloudflare Pages SPA rewrite rules
+│   ├── avatars/                     # Halloween avatar gallery
+│   └── hauntly_logo.png             # Signature gothic branding
 ├── src/
 │   ├── components/
-│   │   ├── auth/
-│   │   │   ├── LoginForm.tsx            # Gothic login form
-│   │   │   ├── SignupForm.tsx           # Gothic signup form with rune fortifier
-│   │   │   ├── SocialAuthButtons.tsx    # Google and Apple OAuth trigger buttons
-│   │   │   └── ProtectedRoute.tsx       # Route guard with ethereal veil spinner
-│   │   ├── dashboard/
-│   │   │   ├── GothicChatPreview.tsx    # Core messaging sandbox
-│   │   │   ├── OAuthSetupGuide.tsx      # In-app interactive provider guide
-│   │   │   ├── SupabaseDiagnostics.tsx  # Auth health & redirect helper
-│   │   │   └── UserProfileCard.tsx      # Soul identity & session card
-│   │   ├── layout/
-│   │   │   ├── Navbar.tsx               # Top navigation with gothic branding
-│   │   │   └── Footer.tsx               # Atmospheric nocturnal footer
-│   │   └── ui/
-│   │       ├── GothicBadge.tsx          # Arcane glowing status badges
-│   │       ├── GothicButton.tsx         # Violet glow buttons with variants
-│   │       ├── GothicCard.tsx           # Obsidian frosted glass cards
-│   │       ├── GothicInput.tsx          # Gothic form inputs with glow focus
-│   │       └── MysticalBackground.tsx   # Ambient mist and radial purple glows
+│   │   ├── auth/                    # Login, Signup, Social OAuth buttons
+│   │   ├── chat/                    # GothicChatSection, GroupChatRoom, MessageContextMenu, AiHelpSidebar
+│   │   ├── dashboard/               # Coven Chamber overview & diagnostics
+│   │   ├── friends/                 # AddFriendSection, FriendsListSection
+│   │   ├── globe/                   # HauntlyGlobe, GlobeAuraOverlay, GothicCompass
+│   │   └── profile/                 # ProfileHeader, AvatarSelector, HauntlyIdBadge
 │   ├── contexts/
-│   │   └── AuthContext.tsx              # Supabase session provider & listener
+│   │   └── AuthContext.tsx          # Supabase auth session provider
 │   ├── lib/
-│   │   └── supabase.ts                  # Official Supabase client singleton
+│   │   ├── geminiService.ts         # Google Gemini AI integration & key storage
+│   │   ├── aiService.ts             # Translation, summarisation, and ghost rewrite engine
+│   │   ├── whisperChatService.ts    # Symmetric 2-user real-time whisper service
+│   │   ├── groupChatService.ts      # Multi-member group rooms & reactions
+│   │   ├── friendsService.ts        # Friend requests, blocks, coven lists
+│   │   ├── mapConfig.ts             # 3D dark globe styles & satellite configurations
+│   │   ├── profileService.ts        # Profile lookup & Hauntly ID search
+│   │   └── supabase.ts              # Supabase client singleton & offline detection
 │   ├── pages/
-│   │   ├── LandingPage.tsx              # Sanctuary landing page
-│   │   ├── LoginPage.tsx                # Crypt entrance
-│   │   ├── SignupPage.tsx               # Soul inscription
-│   │   ├── AuthCallbackPage.tsx         # OAuth token exchange & error catcher
-│   │   └── DashboardPage.tsx            # The Coven Chamber (Protected)
-│   ├── types/
-│   │   └── auth.ts                      # Supabase auth TypeScript definitions
-│   ├── App.tsx                          # App routing & provider shell
-│   ├── index.css                        # Gothic animations, fonts & scrollbars
-│   └── main.tsx                         # Entry point
-└── vite.config.ts                       # Vite configuration
+│   │   ├── LandingPage.tsx          # Welcome portal
+│   │   ├── LoginPage.tsx            # Crypt entrance
+│   │   ├── SignupPage.tsx           # Soul inscription
+│   │   ├── DashboardPage.tsx        # Coven Chamber
+│   │   ├── GlobePage.tsx            # 3D Midnight Earth Globe
+│   │   └── ProfilePage.tsx          # Soul identity settings
+│   ├── App.tsx                      # Application routing
+│   └── main.tsx                     # React root mount
+├── scripts/
+│   ├── test-two-user-chat.ts        # 17/17 automated tests for 2-user chat & IDs
+│   ├── test-gemini-ai.ts            # 20/20 automated tests for Gemini AI features
+│   ├── test-message-context-menu.ts # 4/4 automated tests for context menu
+│   └── test-globe-features.ts       # 7/7 automated tests for 3D globe services
+├── supabase/
+│   └── schema.sql                   # Complete PostgreSQL database schema
+└── package.json                     # Scripts & dependencies
 ```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Clone & Install
+```bash
+git clone https://github.com/anurag/Hauntly.git
+cd Hauntly
+npm install
+```
+
+### 2. Configure Environment Variables
+Copy [.env.example](.env.example) to `.env`:
+```bash
+cp .env.example .env
+```
+Populate `.env` with your Supabase credentials:
+```env
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+VITE_GEMINI_API_KEY=your-gemini-api-key # Optional: users can also enter in-app
+```
+*(Hauntly includes seamless offline/localStorage fallback mode so it runs out-of-the-box even before cloud credentials are added!)*
+
+### 3. Start Development Server
+```bash
+npm run dev
+```
+Open **[http://localhost:5173](http://localhost:5173)** in your browser.
+
+---
+
+## 🧪 Automated Test Suites
+
+Hauntly includes automated test suites covering all critical features:
+
+```bash
+# Test 2 different people & IDs chatting in real time (17/17 passed)
+npm run test:two-user
+
+# Test Google Gemini AI translation, summaries & rewrites (20/20 passed)
+npm run test:gemini
+
+# Test message right-click context menu & security (4/4 passed)
+npm run test:context-menu
+
+# Test 3D Earth Globe services & sanctuary coordinates (7/7 passed)
+npm run test:globe
+
+# Test group chat rooms, reactions & pagination (10/10 passed)
+npm run test:groups
+```
+
+---
+
+## 🚢 Deployment
+
+Hauntly is pre-configured with SPA route rewrite rules for zero-404 deployments on any modern cloud hosting platform:
+
+- **Vercel**: Pre-configured via [vercel.json](vercel.json).
+- **Netlify & Cloudflare Pages**: Pre-configured via [public/_redirects](public/_redirects).
+
+### One-Click Deploy to Vercel
+1. Push your repository to GitHub.
+2. In [Vercel](https://vercel.com), import the `Hauntly` repository (detected automatically as **Vite**).
+3. Set your Environment Variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GEMINI_API_KEY`).
+4. Click **Deploy**.
 
 ---
 
 ## 🔒 Security Best Practices
 
 > [!IMPORTANT]
-> **Zero Frontend Secrets**:
-> - Only the **Supabase URL** and **Anon/Publishable Key** belong in `.env` (`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`).
+> - Only client-safe variables (`VITE_*`) belong in `.env`.
 > - **NEVER** expose your Supabase `service_role` key in frontend code.
-> - **NEVER** place Google Client Secrets or Apple Private Keys (`.p8`) into frontend environment files.
-> - All OAuth Provider Secrets must strictly be configured inside your **Supabase Dashboard**.
+> - OAuth Client Secrets (Google, Apple) are configured exclusively inside your **Supabase Dashboard** (`Authentication -> Providers`), never in client files.
 
 ---
 
-## 🚀 Getting Started
+## 🦇 Communing with the Coven
 
-### 1. Clone & Install Dependencies
-```bash
-git clone <repo-url>
-cd Hauntly
-npm install
-```
-
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-Populate `.env` with your Supabase credentials from your [Supabase Project API Settings](https://supabase.com/dashboard/project/_/settings/api):
-```env
-VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-```
-
-### 3. Launch the Application
-```bash
-npm run dev
-```
-Visit `http://localhost:5173` in your browser.
-
----
-
-## 🗝️ OAuth Provider Setup Guide
-
-### 1. Configure Supabase Redirect URLs
-1. In your **[Supabase Dashboard](https://supabase.com/)**, go to **Authentication &rarr; URL Configuration**.
-2. Set **Site URL** to:
-   ```
-   http://localhost:5173
-   ```
-3. Under **Redirect URLs**, add:
-   ```
-   http://localhost:5173/auth/callback
-   ```
-   *(For production, also add `https://your-domain.com/auth/callback`)*.
-
----
-
-### 2. Google OAuth Configuration
-1. Go to the **[Google Cloud Console](https://console.cloud.google.com/apis/credentials)**.
-2. Select or create your project &rarr; **APIs & Services &rarr; Credentials**.
-3. Click **Create Credentials &rarr; OAuth client ID**.
-4. Select **Web application**.
-5. Under **Authorized redirect URIs**, enter your Supabase OAuth callback URL:
-   ```
-   https://<your-project-ref>.supabase.co/auth/v1/callback
-   ```
-6. Click **Create**, then copy your **Client ID** and **Client Secret**.
-7. In **[Supabase Dashboard](https://supabase.com/) &rarr; Authentication &rarr; Providers &rarr; Google**:
-   - Toggle **Enable Google provider** to **ON**.
-   - Paste your **Client ID** and **Client Secret**.
-   - Click **Save**.
-
----
-
-### 3. Apple OAuth Configuration
-1. Go to **[Apple Developer Account](https://developer.apple.com/account/resources/identifiers/list)**.
-2. **Register an App ID** (or select your existing primary App ID).
-3. **Register a Services ID**:
-   - Enable **Sign in with Apple**.
-   - Click **Configure** next to Sign in with Apple.
-   - Set **Primary App ID**.
-   - Under **Domains and Subdomains**, enter: `<your-project-ref>.supabase.co`.
-   - Under **Return URLs**, enter:
-     ```
-     https://<your-project-ref>.supabase.co/auth/v1/callback
-     ```
-4. **Generate a Private Key**:
-   - Go to **Keys &rarr; Create a Key** with **Sign in with Apple** enabled.
-   - Download the `.p8` key file. Note your **Key ID** and **Team ID**.
-5. In **[Supabase Dashboard](https://supabase.com/) &rarr; Authentication &rarr; Providers &rarr; Apple**:
-   - Toggle **Enable Apple provider** to **ON**.
-   - Enter your **Services ID** (e.g. `com.hauntly.app.web`).
-   - Paste the contents of your downloaded `.p8` file into **Secret Key**.
-   - Enter your **Key ID** and **Team ID**.
-   - Click **Save**.
-
----
-
-## 🛠️ Testing the Authentication Flow
-
-1. **Email / Password**:
-   - Navigate to `/signup` and register a test account.
-   - Notice the gothic rune fortitude indicator.
-   - If Supabase email confirmation is enabled in your project, verify via the emailed link or test with an auto-confirmed user.
-2. **Google OAuth**:
-   - Click **Continue with Google** on `/login` or `/signup`.
-   - Supabase redirects to Google consent &rarr; redirects to `/auth/callback` &rarr; sets session and opens `/dashboard`.
-3. **Apple OAuth**:
-   - Click **Continue with Apple** on `/login` or `/signup`.
-   - Apple sign in modal &rarr; redirects to `/auth/callback` &rarr; opens `/dashboard`.
-4. **Session Persistence**:
-   - Refresh the page while logged into `/dashboard`. The session automatically restores via localStorage and Supabase JWT refresh.
-5. **Protected Route Guard**:
-   - Attempt to access `/dashboard` when logged out; you will be seamlessly redirected to `/login`.
-6. **Sign Out**:
-   - Click **Extinguish Session** in the dashboard or **Depart** in the navbar to clear the Supabase session.
+Live application: **[https://hauntly-eight.vercel.app/login](https://hauntly-eight.vercel.app/login)**  
+Crafted with nocturnal passion for spirits conversing across the globe. 🕯️
