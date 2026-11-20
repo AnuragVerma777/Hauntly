@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const globalProcess = (globalThis as any).process;
+const env =
+  typeof import.meta !== 'undefined' && import.meta && import.meta.env
+    ? import.meta.env
+    : (globalProcess && globalProcess.env ? globalProcess.env : {}) as Record<string, string | undefined>;
+
+const supabaseUrl = env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
 
 export const isSupabaseConfigured = Boolean(
   supabaseUrl &&
@@ -29,5 +35,6 @@ export const supabase = createClient(activeUrl, activeKey, {
  * matching the user's current origin (e.g. http://localhost:5173/auth/callback)
  */
 export const getAuthRedirectUrl = (): string => {
-  return `${window.location.origin}/auth/callback`;
+  const origin = typeof window !== 'undefined' && window.location ? window.location.origin : 'http://localhost:5173';
+  return `${origin}/auth/callback`;
 };

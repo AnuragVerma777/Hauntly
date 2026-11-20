@@ -84,7 +84,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         app_metadata: { provider: 'email' },
         user_metadata: {
           display_name: cleanEmail.split('@')[0],
-          avatar_url: '/avatar_witch_pumpkin.png',
+          avatar_url: '/avatars/avatar_vampire.jpg',
         },
         aud: 'authenticated',
         created_at: new Date().toISOString(),
@@ -122,7 +122,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         app_metadata: { provider: 'email' },
         user_metadata: {
           display_name: displayName || cleanEmail.split('@')[0],
-          avatar_url: '/avatar_witch_pumpkin.png',
+          avatar_url: '/avatars/avatar_vampire.jpg',
         },
         aud: 'authenticated',
         created_at: new Date().toISOString(),
@@ -162,7 +162,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         app_metadata: { provider },
         user_metadata: {
           display_name: provider === 'google' ? 'Spectral Wanderer' : 'Apparition Lord',
-          avatar_url: '/avatar_cute_ghost.png',
+          avatar_url: '/avatars/avatar_cute_sheet_ghost.jpg',
         },
         aud: 'authenticated',
         created_at: new Date().toISOString(),

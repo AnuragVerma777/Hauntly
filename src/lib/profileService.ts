@@ -5,12 +5,86 @@ import type { User } from '@supabase/supabase-js';
 const HAUNTLY_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const LOCAL_PROFILES_KEY = 'hauntly_local_profiles';
 
+export const DEFAULT_SOUL_PROFILES: Record<string, Profile> = {
+  usr_jack: {
+    id: 'usr_jack',
+    hauntly_id: 'HAUNT-8X29K',
+    username: 'jack_lantern',
+    display_name: 'Pumpkin King',
+    avatar_url: '/avatars/avatar_pumpkin_face.jpg',
+    avatar_selection: 'pumpkin_face',
+    bio: 'Grinning through All Hallows Eve in the pumpkin patch.',
+    location_name: 'Salem, Massachusetts',
+    latitude: 42.5211,
+    longitude: -70.8985,
+    created_at: '2026-10-31T00:00:00.000Z',
+    updated_at: '2026-10-31T00:00:00.000Z',
+  },
+  usr_vlad: {
+    id: 'usr_vlad',
+    hauntly_id: 'HAUNT-VAMP7',
+    username: 'dracula',
+    display_name: 'Count Vlad',
+    avatar_url: '/avatars/avatar_vampire.jpg',
+    avatar_selection: 'vampire',
+    bio: 'Lord of the crimson crypt and midnight revels.',
+    location_name: 'Transylvania, Romania',
+    latitude: 45.5152,
+    longitude: 25.3672,
+    created_at: '2026-10-31T00:00:00.000Z',
+    updated_at: '2026-10-31T00:00:00.000Z',
+  },
+  usr_luna: {
+    id: 'usr_luna',
+    hauntly_id: 'HAUNT-WTCH5',
+    username: 'luna_witch',
+    display_name: 'Luna Starlight',
+    avatar_url: '/avatars/avatar_anime_witch.jpg',
+    avatar_selection: 'anime_witch',
+    bio: 'Brewing potions and starlight incantations for the coven.',
+    location_name: 'Black Forest, Germany',
+    latitude: 48.15,
+    longitude: 8.2,
+    created_at: '2026-10-31T00:00:00.000Z',
+    updated_at: '2026-10-31T00:00:00.000Z',
+  },
+  usr_frank: {
+    id: 'usr_frank',
+    hauntly_id: 'HAUNT-FRNK2',
+    username: 'frank_stein',
+    display_name: 'Frankie',
+    avatar_url: '/avatars/avatar_frankenstein.jpg',
+    avatar_selection: 'frankenstein',
+    bio: 'Reanimated with lightning and ready to party.',
+    location_name: 'Geneva, Switzerland',
+    latitude: 46.2044,
+    longitude: 6.1432,
+    created_at: '2026-10-31T00:00:00.000Z',
+    updated_at: '2026-10-31T00:00:00.000Z',
+  },
+  usr_casper: {
+    id: 'usr_casper',
+    hauntly_id: 'HAUNT-GHST1',
+    username: 'casper_ghost',
+    display_name: 'Ghosty Beats',
+    avatar_url: '/avatars/avatar_ghost_headphones.jpg',
+    avatar_selection: 'ghost_headphones',
+    bio: 'Grooving to ethereal beats beyond the veil.',
+    location_name: 'Edinburgh, Scotland',
+    latitude: 55.9533,
+    longitude: -3.1883,
+    created_at: '2026-10-31T00:00:00.000Z',
+    updated_at: '2026-10-31T00:00:00.000Z',
+  },
+};
+
 function getLocalProfiles(): Record<string, Profile> {
   try {
     const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
-    return raw ? JSON.parse(raw) : {};
+    const existing = raw ? JSON.parse(raw) : {};
+    return { ...DEFAULT_SOUL_PROFILES, ...existing };
   } catch {
-    return {};
+    return DEFAULT_SOUL_PROFILES;
   }
 }
 
@@ -18,7 +92,9 @@ function saveLocalProfiles(profiles: Record<string, Profile>) {
   try {
     localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
     // Dispatch custom event so other tabs sync
-    window.dispatchEvent(new Event('hauntly_storage_update'));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('hauntly_storage_update'));
+    }
   } catch (e) {
     console.warn('Failed to save local profiles', e);
   }
@@ -48,11 +124,20 @@ export async function getProfile(userId: string): Promise<{ data: Profile | null
   try {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at, updated_at')
+      .select('id, hauntly_id, username, display_name, avatar_url, bio, location_name, latitude, longitude, created_at, updated_at')
       .eq('id', userId)
       .maybeSingle();
 
     if (error) {
+      // Fallback query if columns don't exist in remote table
+      const fallback = await supabase
+        .from('profiles')
+        .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at, updated_at')
+        .eq('id', userId)
+        .maybeSingle();
+      if (fallback.data) {
+        return { data: fallback.data, error: null };
+      }
       return { data: null, error: new Error(error.message) };
     }
     return { data, error: null };
@@ -90,7 +175,7 @@ export async function ensureProfile(user: User): Promise<{ data: Profile | null;
     const avatarUrl =
       user.user_metadata?.avatar_url ||
       user.user_metadata?.picture ||
-      '/avatar_witch_pumpkin.png';
+      '/avatars/avatar_vampire.jpg';
 
     if (!isSupabaseConfigured) {
       const newProfile: Profile = {
@@ -143,6 +228,9 @@ export async function updateProfile(
     display_name?: string;
     avatar_url?: string | null;
     bio?: string;
+    location_name?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
   }
 ): Promise<{ data: Profile | null; error: Error | null }> {
   try {
@@ -158,6 +246,15 @@ export async function updateProfile(
     }
     if (updates.bio !== undefined) {
       cleanUpdates.bio = updates.bio.trim();
+    }
+    if (updates.location_name !== undefined) {
+      cleanUpdates.location_name = updates.location_name ? updates.location_name.trim() : null;
+    }
+    if (updates.latitude !== undefined) {
+      cleanUpdates.latitude = typeof updates.latitude === 'number' ? updates.latitude : null;
+    }
+    if (updates.longitude !== undefined) {
+      cleanUpdates.longitude = typeof updates.longitude === 'number' ? updates.longitude : null;
     }
     if (updates.username !== undefined) {
       const sanitizedUsername = updates.username.toLowerCase().trim().replace(/[^a-z0-9_]/g, '_');
@@ -186,7 +283,7 @@ export async function updateProfile(
       .from('profiles')
       .update(cleanUpdates)
       .eq('id', userId)
-      .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at, updated_at')
+      .select('id, hauntly_id, username, display_name, avatar_url, bio, location_name, latitude, longitude, created_at, updated_at')
       .single();
 
     if (error) {

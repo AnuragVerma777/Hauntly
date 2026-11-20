@@ -4,7 +4,12 @@ export interface Profile {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  avatar_selection?: string;
+  status?: string;
   bio?: string | null;
+  location_name?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   created_at: string;
   updated_at?: string;
 }

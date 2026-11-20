@@ -65,6 +65,44 @@
   animation: fog-drift 20s ease-in-out infinite;
 }
 
+@keyframes bat-flap {
+  0%, 100% {
+    transform: scaleY(1);
+  }
+  50% {
+    transform: scaleY(0.35) rotate(3deg);
+  }
+}
+
+@keyframes bat-swoop {
+  0% {
+    transform: translate(0, 0) scale(0.8);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(50px, -35px) scale(1.1);
+  }
+  85% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translate(110px, -70px) scale(0.7);
+    opacity: 0;
+  }
+}
+
+.animate-bat-flap {
+  animation: bat-flap 0.35s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.animate-bat-swoop {
+  animation: bat-swoop 4s ease-in-out infinite;
+}
+
 /* Gothic scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search,
   UserPlus,
   Send,
-  Ghost,
   Copy,
   Check,
   Lock,
@@ -13,93 +13,243 @@ import {
   CheckCheck,
   X,
   ChevronRight,
+  Users,
+  SquarePen,
+  Mail,
+  Ghost,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import type { FriendEntry, Profile } from '../../types/profile';
-import { fetchAcceptedFriends } from '../../lib/friendsService';
+import type { Group, GroupMember } from '../../types/groupChat';
+import { fetchAcceptedFriends, fetchPendingRequests } from '../../lib/friendsService';
 import { ensureProfile } from '../../lib/profileService';
+import { fetchUserGroups, fetchGroupMembers } from '../../lib/groupChatService';
+import { GroupChatRoom } from './GroupChatRoom';
+import { GroupInfoPanel } from './GroupInfoPanel';
+import { CreateGroupModal } from './CreateGroupModal';
+import { AiHelpSidebar } from './AiHelpSidebar';
+import { MessageContextMenu } from './MessageContextMenu';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import {
+  type ChatMessage,
+  fetchDirectMessages,
+  sendDirectMessage,
+  deleteDirectMessage,
+  subscribeToDirectWhispers,
+} from '../../lib/whisperChatService';
 
 interface GothicChatSectionProps {
   onNavigateToFriends?: () => void;
 }
 
-interface ChatMessage {
+export interface CovenFriendItem {
   id: string;
-  senderId: string;
-  senderName: string;
-  text: string;
+  name: string;
+  avatar: string;
+  hauntlyId: string;
+  username: string;
+  bio?: string | null;
+  status: 'invited' | 'accepted';
   time: string;
-  isSelf: boolean;
+  unread?: number;
+  online?: boolean;
 }
 
 export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
   onNavigateToFriends,
 }) => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
+  const [covenFriends, setCovenFriends] = useState<CovenFriendItem[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Tab mode in chat: 'groups' | 'direct'
+  const [chatType, setChatType] = useState<'groups' | 'direct'>('direct');
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+
+  // Group members state for right panel
+  const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+
+  // Modals & Panels
+  const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [showRightPanel, setShowRightPanel] = useState(() => {
+    return typeof window !== 'undefined' ? window.innerWidth >= 1280 : false;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState(false);
 
-  // Active chat state
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [showRightPanel, setShowRightPanel] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Direct chat state
+  const [directMessages, setDirectMessages] = useState<ChatMessage[]>([]);
+  const [directInputText, setDirectInputText] = useState('');
+  const directMessagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load current user profile & friends
+  // Right panel mode: 'info' | 'ai'
+  const [rightPanelTab, setRightPanelTab] = useState<'info' | 'ai'>('info');
+  const [aiSelectedText, setAiSelectedText] = useState<string>('');
+  const [aiMode, setAiMode] = useState<'translate' | 'summarise' | 'rewrite' | 'replies'>('translate');
+
+  // Direct chat context menu & delete states
+  const [directContextMenu, setDirectContextMenu] = useState<{
+    x: number;
+    y: number;
+    messageId: string;
+    messageText: string;
+    isSelf: boolean;
+  } | null>(null);
+  const [directDeleteTarget, setDirectDeleteTarget] = useState<{
+    messageId: string;
+    messageText: string;
+  } | null>(null);
+  const [directToast, setDirectToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (directToast) {
+      const timer = setTimeout(() => setDirectToast(null), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [directToast]);
+
+  // 1. Load initial user data, groups, and invited/accepted friends
   useEffect(() => {
     let active = true;
     const fetchAll = async () => {
-      if (!user) return;
-      const [pRes, fRes] = await Promise.all([
-        ensureProfile(user),
-        fetchAcceptedFriends(user.id),
+      const currentId = user?.id || 'default_current_user';
+      const [pRes, fRes, gRes, reqRes] = await Promise.all([
+        user ? ensureProfile(user) : Promise.resolve({ data: null, error: null }),
+        fetchAcceptedFriends(currentId),
+        fetchUserGroups(currentId),
+        fetchPendingRequests(currentId),
       ]);
+
       if (!active) return;
       if (pRes.data) setProfile(pRes.data);
+      if (fRes.data) setFriends(fRes.data);
+      if (gRes.data) setGroups(gRes.data);
+
+      const items: CovenFriendItem[] = [];
+      const seenIds = new Set<string>();
+
+      // 1. Accepted Coven Friends
       if (fRes.data) {
-        setFriends(fRes.data);
-        if (fRes.data.length > 0 && !selectedFriendId) {
-          setSelectedFriendId(fRes.data[0].friend.id);
+        for (const entry of fRes.data) {
+          if (entry.friend && !seenIds.has(entry.friend.id)) {
+            seenIds.add(entry.friend.id);
+            items.push({
+              id: entry.friend.id,
+              name: entry.friend.display_name,
+              avatar: entry.friend.avatar_url || '/avatars/avatar_vampire.jpg',
+              hauntlyId: entry.friend.hauntly_id,
+              username: entry.friend.username,
+              bio: entry.friend.bio,
+              status: 'accepted',
+              time: 'In Coven',
+              online: true,
+            });
+          }
         }
+      }
+
+      // 2. Friends user is going to invite / has invited (pending outgoing requests)
+      if (reqRes.sent) {
+        for (const req of reqRes.sent) {
+          const target = req.addressee;
+          if (target && !seenIds.has(target.id)) {
+            seenIds.add(target.id);
+            items.push({
+              id: target.id,
+              name: target.display_name,
+              avatar: target.avatar_url || '/avatars/avatar_pumpkin_face.jpg',
+              hauntlyId: target.hauntly_id,
+              username: target.username,
+              bio: target.bio,
+              status: 'invited',
+              time: 'Invited',
+              online: true,
+            });
+          }
+        }
+      }
+
+      setCovenFriends(items);
+
+      if (items.length > 0 && !selectedFriendId) {
+        setSelectedFriendId(items[0].id);
+        setChatType('direct');
+      } else if (gRes.data && gRes.data.length > 0 && !selectedGroupId) {
+        setSelectedGroupId(gRes.data[0].id);
       }
       setLoading(false);
     };
 
     void fetchAll();
-    const handleStorageUpdate = () => { void fetchAll(); };
+    const handleStorageUpdate = () => {
+      void fetchAll();
+    };
     window.addEventListener('hauntly_storage_update', handleStorageUpdate);
     return () => {
       active = false;
       window.removeEventListener('hauntly_storage_update', handleStorageUpdate);
     };
+  }, [user, selectedFriendId, selectedGroupId]);
+
+  // 2. Load group members when selected group changes
+  useEffect(() => {
+    let active = true;
+    if (!selectedGroupId) {
+      setTimeout(() => {
+        if (active) setGroupMembers([]);
+      }, 0);
+      return;
+    }
+    void fetchGroupMembers(selectedGroupId).then((res) => {
+      if (active && res.data) setGroupMembers(res.data);
+    });
+    return () => {
+      active = false;
+    };
+  }, [selectedGroupId]);
+
+  // 3. Load direct messages for selected friend & subscribe to real-time whispers
+  useEffect(() => {
+    const currentUserId = user?.id || 'default_current_user';
+    if (!selectedFriendId) {
+      setDirectMessages([]);
+      return;
+    }
+
+    let active = true;
+    void fetchDirectMessages(currentUserId, selectedFriendId).then((msgs) => {
+      if (active) setDirectMessages(msgs);
+    });
+
+    const unsubscribe = subscribeToDirectWhispers({
+      userId1: currentUserId,
+      userId2: selectedFriendId,
+      onNewMessage: (msg) => {
+        setDirectMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          return [...prev, msg];
+        });
+      },
+      onDeleteMessage: (deletedId) => {
+        setDirectMessages((prev) => prev.filter((m) => m.id !== deletedId));
+      },
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [user, selectedFriendId]);
 
-  // Load messages for selected friend
+  // Scroll direct messages
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (!user || !selectedFriendId) {
-        setMessages([]);
-        return;
-      }
-      try {
-        const storageKey = `hauntly_chat_${user.id}_${selectedFriendId}`;
-        const saved = localStorage.getItem(storageKey);
-        setMessages(saved ? JSON.parse(saved) : []);
-      } catch {
-        setMessages([]);
-      }
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [user, selectedFriendId]);
-
-  // Scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    directMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [directMessages]);
 
   const handleCopyMyId = () => {
     if (!profile) return;
@@ -108,39 +258,55 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
     setTimeout(() => setCopiedId(false), 2000);
   };
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendDirectMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!inputText.trim() || !user || !selectedFriendId || !profile) return;
+    const currentUserId = user?.id || 'default_current_user';
+    const currentUserName = profile?.display_name || user?.email?.split('@')[0] || 'You';
+    if (!directInputText.trim() || !selectedFriendId) return;
 
-    const newMsg: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      senderId: user.id,
-      senderName: profile.display_name || 'You',
-      text: inputText.trim(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isSelf: true,
-    };
-
-    const nextList = [...messages, newMsg];
-    setMessages(nextList);
-    setInputText('');
+    const text = directInputText.trim();
+    setDirectInputText('');
 
     try {
-      const storageKey = `hauntly_chat_${user.id}_${selectedFriendId}`;
-      localStorage.setItem(storageKey, JSON.stringify(nextList));
+      const sent = await sendDirectMessage({
+        senderId: currentUserId,
+        senderName: currentUserName,
+        receiverId: selectedFriendId,
+        text,
+      });
+
+      setDirectMessages((prev) => {
+        if (prev.some((m) => m.id === sent.id)) return prev;
+        return [...prev, sent];
+      });
     } catch (err) {
-      console.warn('Failed to save message', err);
+      console.warn('Failed to send direct whisper', err);
     }
   };
 
-  const activeFriendEntry = friends.find((f) => f.friend.id === selectedFriendId);
-  const activeFriend = activeFriendEntry?.friend;
+  const handleGroupCreated = (newGroup: Group) => {
+    setGroups((prev) => [newGroup, ...prev]);
+    setSelectedGroupId(newGroup.id);
+    setChatType('groups');
+  };
 
-  const filteredFriends = friends.filter((f) =>
-    (f.friend.display_name || f.friend.username || '')
-      .toLowerCase()
-      .includes(searchQuery.toLowerCase())
-  );
+  const activeGroup = groups.find((g) => g.id === selectedGroupId) || groups[0];
+  const activeFriendItem =
+    covenFriends.find((c) => c.id === selectedFriendId) || covenFriends[0] || null;
+  const activeFriend: Profile | null = activeFriendItem
+    ? {
+        id: activeFriendItem.id,
+        hauntly_id: activeFriendItem.hauntlyId,
+        username: activeFriendItem.username,
+        display_name: activeFriendItem.name,
+        avatar_url: activeFriendItem.avatar,
+        bio:
+          activeFriendItem.bio ||
+          (activeFriendItem.status === 'invited' ? 'Invited to your coven' : 'In your coven'),
+        created_at: '2026-10-31T00:00:00.000Z',
+        updated_at: '2026-10-31T00:00:00.000Z',
+      }
+    : null;
 
   if (loading) {
     return (
@@ -153,191 +319,43 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
     );
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // CASE 1: NO FRIENDS ADDED YET (Clear empty state requested by user)
-  // ══════════════════════════════════════════════════════════════════════
-  if (friends.length === 0) {
-    return (
-      <div className="flex-1 flex w-full h-full overflow-hidden select-none bg-[#0a0315]">
-        {/* Messages Left Sidebar */}
-        <div
-          className="w-72 sm:w-80 flex-shrink-0 flex flex-col border-r border-purple-900/30 overflow-hidden"
-          style={{ background: 'linear-gradient(180deg, #100522 0%, #0c031a 100%)' }}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 pt-5 pb-3">
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-lg font-bold text-white tracking-wide">Messages</h2>
-              <span className="text-lg font-bold text-purple-400">(0)</span>
-            </div>
-            <button
-              type="button"
-              onClick={onNavigateToFriends}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-purple-300 hover:text-white hover:bg-purple-900/40 transition-colors cursor-pointer"
-              title="Add Friend by ID"
-            >
-              <UserPlus className="w-4 h-4" />
-            </button>
-          </div>
+  // Check if user has no groups and no invited friends
+  const hasNoContent = groups.length === 0 && covenFriends.length === 0;
 
-          {/* Search bar */}
-          <div className="px-5 pb-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-purple-400/50 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                disabled
-                placeholder="No chats yet..."
-                className="w-full bg-[#170a2f]/40 text-xs text-purple-400/40 placeholder-purple-400/30 rounded-xl pl-9 pr-3 py-2.5 outline-none border border-purple-900/30 cursor-not-allowed font-medium"
-              />
-            </div>
-          </div>
+  const filteredGroups = groups.filter((g) =>
+    g.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+  const filteredCovenFriends = covenFriends.filter(
+    (f) =>
+      f.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      f.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      f.hauntlyId.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-          {/* Empty Sidebar Notice */}
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-purple-950/60 border border-purple-800/40 flex items-center justify-center text-purple-400/60 mb-3 shadow-[0_0_20px_rgba(168,85,247,0.15)]">
-              <Ghost className="w-6 h-6 animate-pulse" />
-            </div>
-            <p className="text-xs font-semibold text-purple-200 mb-1">Silence in the Crypt</p>
-            <p className="text-[11px] text-purple-400/60 leading-relaxed max-w-[200px] mb-4">
-              You haven&apos;t added any friends yet. Add a spirit by ID to start chatting.
-            </p>
-            <button
-              type="button"
-              onClick={onNavigateToFriends}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-purple-800/50 hover:bg-purple-700/70 border border-purple-600/50 text-white text-xs font-semibold shadow-[0_0_15px_rgba(168,85,247,0.3)] transition-all cursor-pointer"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Add Friend by ID</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Center Main Stage (Empty State matching Hauntly Gothic UI) */}
-        <div
-          className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 relative overflow-hidden"
-          style={{
-            background:
-              'radial-gradient(circle at 50% 40%, #290b4d 0%, #15052b 50%, #0a0218 100%)',
-          }}
-        >
-          {/* Ambient Glows */}
-          <div className="absolute w-96 h-96 rounded-full bg-purple-600/10 blur-3xl pointer-events-none" />
-
-          <div className="relative z-10 max-w-md w-full flex flex-col items-center text-center">
-            {/* Glowing Icon */}
-            <div className="relative mb-6">
-              <div
-                className="w-24 h-24 rounded-3xl overflow-hidden border-2 border-purple-500/60 flex items-center justify-center bg-purple-950/80"
-                style={{
-                  boxShadow:
-                    '0 0 45px rgba(168,85,247,0.45), inset 0 0 20px rgba(168,85,247,0.2)',
-                }}
-              >
-                <img
-                  src="/hauntly-icon.png"
-                  alt="Hauntly Realm"
-                  className="w-16 h-16 object-contain drop-shadow-[0_0_15px_rgba(168,85,247,0.8)]"
-                />
-              </div>
-              <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-purple-600 border-2 border-[#0a0218] flex items-center justify-center">
-                <Sparkles className="w-3 h-3 text-white" />
-              </div>
-            </div>
-
-            {/* Title & Description */}
-            <h2 className="text-2xl font-serif font-black text-white tracking-wide mb-2">
-              Your Coven is Quiet
-            </h2>
-            <p className="text-xs sm:text-sm text-purple-300/70 leading-relaxed mb-6 max-w-sm">
-              No friends have been summoned to your messaging realm yet. Add a friend by their unique
-              Hauntly ID to unlock private whispers and encrypted transmissions.
-            </p>
-
-            {/* User's Own Permanent Hauntly ID Card */}
-            {profile && (
-              <div
-                className="w-full rounded-2xl border border-purple-800/40 p-4 mb-6 text-left"
-                style={{ background: 'rgba(12,5,25,0.85)' }}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
-                    <Lock className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Your Unique Hauntly ID</span>
-                  </div>
-                  <span className="text-[10px] text-purple-400/60 font-mono">Share with friends</span>
-                </div>
-
-                <div className="flex items-center gap-2 bg-[#070210] rounded-xl border border-purple-900/50 px-3.5 py-2.5">
-                  <span className="text-purple-400 font-mono font-bold text-sm">#</span>
-                  <span className="flex-1 font-mono text-sm text-white font-semibold tracking-wider select-all">
-                    {profile.hauntly_id.toLowerCase()}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleCopyMyId}
-                    title="Copy Hauntly ID"
-                    className="flex items-center gap-1 text-xs text-purple-300 hover:text-white px-2 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 transition-colors cursor-pointer"
-                  >
-                    {copiedId ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400 font-medium">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row items-center gap-3 w-full">
-              <button
-                type="button"
-                onClick={onNavigateToFriends}
-                className="w-full flex items-center justify-center gap-2 py-3.5 px-6 rounded-2xl text-xs sm:text-sm font-bold text-white transition-all cursor-pointer shadow-[0_0_25px_rgba(124,58,237,0.5)]"
-                style={{
-                  background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)',
-                }}
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Summon a Friend by ID 👻</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ══════════════════════════════════════════════════════════════════════
-  // CASE 2: REAL FRIENDS ADDED (Live 1-on-1 chatting with real friends)
-  // ══════════════════════════════════════════════════════════════════════
   return (
     <div className="flex-1 flex w-full h-full overflow-hidden select-none bg-[#0a0315]">
-      {/* ── Left Messages Column (Real Friends List) ── */}
+      {/* ══════════════════════════════════════════════════════════════════
+          COLUMN 1: MESSAGES LIST (Only Invited Friends & Coven)
+      ══════════════════════════════════════════════════════════════════ */}
       <div
         className="w-72 sm:w-80 flex-shrink-0 flex flex-col border-r border-purple-900/30 overflow-hidden"
         style={{ background: 'linear-gradient(180deg, #100522 0%, #0c031a 100%)' }}
       >
-        {/* Header */}
+        {/* Header with Title and Compose Button */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-1.5">
             <h2 className="text-lg font-bold text-white tracking-wide">Messages</h2>
-            <span className="text-lg font-bold text-purple-400">({friends.length})</span>
+            <span className="text-lg font-bold text-purple-400">
+              ({covenFriends.length + groups.length})
+            </span>
           </div>
           <button
             type="button"
-            onClick={onNavigateToFriends}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-purple-300 hover:text-white hover:bg-purple-900/40 transition-colors cursor-pointer"
-            title="Add Friend by ID"
+            onClick={() => setShowCreateGroupModal(true)}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-purple-300 hover:text-white hover:bg-purple-900/50 transition-all cursor-pointer shadow-[0_0_10px_rgba(168,85,247,0.2)]"
+            title="Compose message / Create group"
           >
-            <UserPlus className="w-4 h-4" />
+            <SquarePen className="w-4 h-4 text-purple-300" />
           </button>
         </div>
 
@@ -349,64 +367,265 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search friends..."
-              className="w-full bg-[#170a2f]/80 text-xs text-white placeholder-purple-400/40 rounded-xl pl-9 pr-3 py-2.5 outline-none border border-purple-900/40 focus:border-purple-600/60 transition-all font-medium"
+              placeholder="Search chats..."
+              className="w-full bg-[#170a2f]/80 text-xs text-white placeholder-purple-400/40 rounded-xl pl-9 pr-3 py-2 outline-none border border-purple-900/40 focus:border-purple-600/60 transition-all font-medium"
             />
           </div>
         </div>
 
-        {/* Friends Scroll List */}
-        <div className="flex-1 overflow-y-auto px-3 space-y-1 pb-4 scrollbar-thin scrollbar-thumb-purple-900/40">
-          <div className="px-2 pb-1.5 text-[11px] font-semibold text-purple-300/70">
-            <span>Coven Whispers</span>
-          </div>
+        {/* Scroll List: Only Groups & Invited Friends */}
+        <div className="flex-1 overflow-y-auto px-3 space-y-4 pb-4 scrollbar-thin scrollbar-thumb-purple-900/40">
+          {/* ── 1. CIRCLES & COVENS (Groups) ── */}
+          {filteredGroups.length > 0 && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between px-2 pt-1 pb-1">
+                <span className="text-[11px] font-semibold text-purple-300/70 tracking-wider">
+                  Circles & Covens
+                </span>
+                <span className="text-[10px] font-mono text-purple-400/60">{filteredGroups.length}</span>
+              </div>
 
-          {filteredFriends.map((entry) => {
-            const isSelected = selectedFriendId === entry.friend.id;
-            const friendName = entry.friend.display_name || entry.friend.username || 'Spirit';
-            return (
-              <button
-                key={entry.friend.id}
-                type="button"
-                onClick={() => setSelectedFriendId(entry.friend.id)}
-                className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition-all duration-200 cursor-pointer ${
-                  isSelected
-                    ? 'bg-gradient-to-r from-purple-900/80 to-purple-800/50 border border-purple-500/50 shadow-[0_0_18px_rgba(168,85,247,0.3)]'
-                    : 'hover:bg-purple-950/40 border border-transparent'
-                }`}
-              >
-                <div className="relative shrink-0">
-                  <img
-                    src={entry.friend.avatar_url || '/hauntly-icon.png'}
-                    alt={friendName}
-                    className="w-10 h-10 rounded-full object-cover ring-1 ring-purple-500/40"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = '/hauntly-icon.png';
+              {filteredGroups.map((grp) => {
+                const isSelected = chatType === 'groups' && selectedGroupId === grp.id;
+                return (
+                  <button
+                    key={grp.id}
+                    type="button"
+                    onClick={() => {
+                      setChatType('groups');
+                      setSelectedGroupId(grp.id);
                     }}
-                  />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#100522]" />
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition-all duration-200 cursor-pointer ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-purple-900/80 to-purple-800/50 border border-purple-500/50 shadow-[0_0_18px_rgba(168,85,247,0.3)]'
+                        : 'hover:bg-purple-950/40 border border-transparent'
+                    }`}
+                  >
+                    <div className="relative shrink-0">
+                      <img
+                        src={grp.avatar_url || '/avatars/avatar_pumpkin_face.jpg'}
+                        alt={grp.name}
+                        className="w-10 h-10 rounded-xl object-cover ring-1 ring-purple-500/40"
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs font-semibold text-white truncate">{grp.name}</span>
+                      </div>
+                      <span className="text-[11px] text-purple-300/60 truncate block">
+                        {grp.description || 'Active circle'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── 2. INVITED FRIENDS & COVEN ── */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between px-2 pt-1 pb-1">
+              <span className="text-[11px] font-semibold text-purple-300/70 tracking-wider">
+                Invited Friends
+              </span>
+              <span className="text-[10px] font-mono text-purple-400/60">
+                {filteredCovenFriends.length}
+              </span>
+            </div>
+
+            {filteredCovenFriends.length > 0 ? (
+              filteredCovenFriends.map((friend) => {
+                const isSelected = chatType === 'direct' && selectedFriendId === friend.id;
+                return (
+                  <button
+                    key={friend.id}
+                    type="button"
+                    onClick={() => {
+                      setChatType('direct');
+                      setSelectedFriendId(friend.id);
+                    }}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-2xl text-left transition-all duration-200 cursor-pointer ${
+                      isSelected
+                        ? 'bg-gradient-to-r from-purple-900/80 to-purple-800/50 border border-purple-500/50 shadow-[0_0_18px_rgba(168,85,247,0.3)]'
+                        : 'hover:bg-purple-950/40 border border-transparent'
+                    }`}
+                  >
+                    <div className="relative shrink-0">
+                      <img
+                        src={friend.avatar}
+                        alt={friend.name}
+                        className="w-10 h-10 rounded-full object-cover ring-1 ring-purple-500/40"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = '/avatars/avatar_vampire.jpg';
+                        }}
+                      />
+                      {friend.online && (
+                        <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#100522]" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs font-semibold text-white truncate">{friend.name}</span>
+                        {friend.status === 'invited' ? (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0">
+                            <Mail className="w-2.5 h-2.5" /> Invited
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0">
+                            🕯️ In Coven
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-purple-300/60 font-mono truncate">
+                          #{friend.hauntlyId.toLowerCase()}
+                        </span>
+                        <span className="text-[10px] text-purple-400/50 font-mono shrink-0 ml-1">
+                          @{friend.username}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="p-4 rounded-2xl bg-purple-950/20 border border-purple-900/30 text-center space-y-2 my-2">
+                <div className="w-10 h-10 rounded-full bg-purple-900/40 border border-purple-500/30 flex items-center justify-center text-purple-300 mx-auto">
+                  <Ghost className="w-5 h-5 text-[#d4ff32]" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-xs font-semibold text-white truncate">{friendName}</span>
-                    <span className="text-[10px] text-purple-400/60 font-mono">
-                      #{entry.friend.hauntly_id.toLowerCase().slice(0, 9)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-purple-300/60 truncate">
-                      @{entry.friend.username || 'spirit'}
-                    </span>
-                  </div>
+                <div>
+                  <p className="text-xs text-white font-semibold">No friends invited yet</p>
+                  <p className="text-[10px] text-purple-400/60 leading-relaxed mt-0.5">
+                    Only friends you summon or invite to your coven will appear here.
+                  </p>
                 </div>
-              </button>
-            );
-          })}
+                {onNavigateToFriends && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToFriends}
+                    className="px-3 py-1.5 rounded-xl bg-[#d4ff32] hover:bg-[#bbf019] text-black text-[11px] font-bold transition-all shadow-sm cursor-pointer inline-flex items-center gap-1 mt-1"
+                  >
+                    <UserPlus className="w-3 h-3" />
+                    <span>Summon Friends</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ── Center Chat Room with Active Friend ── */}
-      {activeFriend ? (
+      {/* ══════════════════════════════════════════════════════════════════
+          COLUMN 2: MAIN CHAT ROOM (Group Realtime Room OR Direct Whispers)
+      ══════════════════════════════════════════════════════════════════ */}
+      {hasNoContent ? (
+        /* Empty State across realm */
+        <div
+          className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 relative overflow-hidden text-center"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 40%, #290b4d 0%, #15052b 50%, #0a0218 100%)',
+          }}
+        >
+          <div className="relative mb-6">
+            <div
+              className="w-24 h-24 rounded-3xl overflow-hidden border-2 border-purple-500/60 flex items-center justify-center bg-purple-950/80 shadow-[0_0_45px_rgba(168,85,247,0.45)]"
+            >
+              <img src="/hauntly-icon.png" alt="Hauntly" className="w-16 h-16 object-contain" />
+            </div>
+            <div className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-purple-600 border-2 border-[#0a0218] flex items-center justify-center">
+              <Sparkles className="w-3 h-3 text-white" />
+            </div>
+          </div>
+
+          <h2 className="text-2xl font-serif font-black text-white tracking-wide mb-2">
+            Your Coven is Quiet
+          </h2>
+          <p className="text-xs sm:text-sm text-purple-300/70 leading-relaxed mb-6 max-w-sm">
+            Form a coven group or add a companion using their permanent Hauntly ID to begin real-time
+            encrypted conversations.
+          </p>
+
+          {profile && (
+            <div
+              className="w-full max-w-xs rounded-2xl border border-purple-800/40 p-4 mb-6 text-left"
+              style={{ background: 'rgba(12,5,25,0.85)' }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-purple-300">Your Hauntly ID</span>
+                <span className="text-[10px] text-purple-400/60 font-mono">Share with friends</span>
+              </div>
+              <div className="flex items-center gap-2 bg-[#070210] rounded-xl border border-purple-900/50 px-3 py-2">
+                <span className="text-purple-400 font-mono font-bold text-sm">#</span>
+                <span className="flex-1 font-mono text-sm text-white font-semibold tracking-wider select-all">
+                  {profile.hauntly_id.toLowerCase()}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyMyId}
+                  className="text-xs text-purple-300 hover:text-white px-2 py-1 rounded bg-purple-900/40 transition-colors cursor-pointer"
+                >
+                  {copiedId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col sm:flex-row items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowCreateGroupModal(true)}
+              className="flex items-center justify-center gap-2 py-3 px-5 rounded-2xl text-xs font-bold text-white shadow-[0_0_20px_rgba(124,58,237,0.5)] cursor-pointer"
+              style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)' }}
+            >
+              <Users className="w-4 h-4" />
+              <span>Form Coven Group</span>
+            </button>
+            <button
+              type="button"
+              onClick={onNavigateToFriends}
+              className="flex items-center justify-center gap-2 py-3 px-5 rounded-2xl text-xs font-bold text-purple-200 border border-purple-700/50 hover:bg-purple-900/40 transition-colors cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Add Friend by ID</span>
+            </button>
+          </div>
+        </div>
+      ) : chatType === 'groups' && activeGroup && profile ? (
+        /* Real-Time WhatsApp-style Group Chat Room */
+        <GroupChatRoom
+          key={activeGroup.id}
+          group={activeGroup}
+          currentUser={profile}
+          showInfoPanel={showRightPanel && rightPanelTab === 'info'}
+          onToggleInfo={() => {
+            if (showRightPanel && rightPanelTab === 'info') {
+              setShowRightPanel(false);
+            } else {
+              setRightPanelTab('info');
+              setShowRightPanel(true);
+            }
+          }}
+          onToggleAiHelp={() => {
+            if (showRightPanel && rightPanelTab === 'ai') {
+              setShowRightPanel(false);
+            } else {
+              setRightPanelTab('ai');
+              setShowRightPanel(true);
+            }
+          }}
+          onOpenAiHelp={(text, mode) => {
+            setAiSelectedText(text);
+            setAiMode(mode);
+            setRightPanelTab('ai');
+            setShowRightPanel(true);
+          }}
+          onViewOnGlobe={(_lat, _lng, locId) => {
+            navigate(`/globe?groupId=${activeGroup.id}&locationId=${locId}`);
+          }}
+        />
+      ) : chatType === 'direct' && activeFriend ? (
+        /* Direct 1-on-1 Whispers Room */
         <div
           className="flex-1 flex flex-col overflow-hidden relative"
           style={{
@@ -414,7 +633,7 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
               'radial-gradient(circle at 60% 30%, #300c5c 0%, #1c0638 45%, #0e021e 85%, #080112 100%)',
           }}
         >
-          {/* Header Bar */}
+          {/* Header */}
           <div
             className="flex items-center justify-between px-6 py-3.5 border-b border-purple-900/40 flex-shrink-0"
             style={{ background: 'rgba(18,7,38,0.7)', backdropFilter: 'blur(10px)' }}
@@ -422,23 +641,30 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
             <div
               className="flex items-center gap-3 cursor-pointer"
               onClick={() => setShowRightPanel((prev) => !prev)}
-              title="Toggle Friend Info"
             >
               <div className="relative">
                 <img
                   src={activeFriend.avatar_url || '/hauntly-icon.png'}
                   alt={activeFriend.display_name}
                   className="w-10 h-10 rounded-full object-cover ring-2 ring-purple-500/50"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = '/hauntly-icon.png';
-                  }}
                 />
                 <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-400 ring-2 ring-[#120726]" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-white tracking-wide">
-                  {activeFriend.display_name}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-white tracking-wide">
+                    {activeFriend.display_name}
+                  </h3>
+                  {activeFriendItem?.status === 'invited' ? (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0">
+                      <Mail className="w-2.5 h-2.5" /> Invited Friend
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0">
+                      🕯️ In Coven
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-1.5 text-[11px] text-purple-300/70">
                   <span className="font-mono">#{activeFriend.hauntly_id.toLowerCase()}</span>
                   <span>•</span>
@@ -447,68 +673,116 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowRightPanel((prev) => !prev)}
-              className="text-xs text-purple-300/70 hover:text-purple-200 px-3 py-1.5 rounded-xl bg-purple-950/50 hover:bg-purple-900/50 border border-purple-800/40 transition-colors flex items-center gap-1 cursor-pointer"
-            >
-              <span>Profile Info</span>
-              <ChevronRight
-                className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                  showRightPanel ? 'rotate-90' : ''
-                }`}
-              />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (showRightPanel && rightPanelTab === 'ai') {
+                    setShowRightPanel(false);
+                  } else {
+                    setRightPanelTab('ai');
+                    setAiSelectedText(
+                      directMessages[directMessages.length - 1]?.text ||
+                        "Let's meet at the haunted castle tonight!"
+                    );
+                    setShowRightPanel(true);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-900/50 hover:bg-purple-800/70 border border-purple-600/40 text-purple-200 hover:text-white text-xs font-semibold shadow-sm transition-all cursor-pointer"
+                title="Open Spectral AI Help"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#d4ff32]" />
+                <span className="hidden sm:inline">AI Help</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (showRightPanel && rightPanelTab === 'info') {
+                    setShowRightPanel(false);
+                  } else {
+                    setRightPanelTab('info');
+                    setShowRightPanel(true);
+                  }
+                }}
+                className="text-xs text-purple-300/70 hover:text-purple-200 px-3 py-1.5 rounded-xl bg-purple-950/50 hover:bg-purple-900/50 border border-purple-800/40 transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                <span>Profile Info</span>
+                <ChevronRight
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    showRightPanel && rightPanelTab === 'info' ? 'rotate-90' : ''
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
-          {/* Messages Stream */}
+          {/* Messages */}
           <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 scrollbar-thin scrollbar-thumb-purple-900/30">
-            {messages.length === 0 ? (
+            {directMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-6 text-purple-300/60">
                 <MessageSquare className="w-10 h-10 mb-2 opacity-50" />
-                <p className="text-xs font-semibold text-white">Start the conversation</p>
+                <p className="text-xs font-semibold text-white">Start the whisper</p>
                 <p className="text-[11px] max-w-xs mt-1">
                   Send a private whisper to {activeFriend.display_name} across the shadows.
                 </p>
               </div>
             ) : (
-              messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex flex-col ${msg.isSelf ? 'items-end' : 'items-start'} gap-1`}
-                >
-                  <div className="flex items-center gap-2 px-1">
-                    <span className="text-[10px] text-purple-400/60 font-mono">{msg.time}</span>
-                    <span className="text-[11px] font-semibold text-purple-200">
-                      {msg.senderName}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 max-w-[80%] sm:max-w-[70%]">
-                    <div
-                      className="px-4 py-2.5 rounded-2xl text-xs font-medium leading-relaxed text-white"
-                      style={{
-                        background: msg.isSelf
-                          ? 'linear-gradient(135deg, #6d28d9 0%, #581c87 100%)'
-                          : 'linear-gradient(135deg, #4c1d95 0%, #3b0764 100%)',
-                        boxShadow: '0 4px 20px rgba(109,40,217,0.3)',
-                      }}
-                    >
-                      {msg.text}
+              directMessages.map((msg) => {
+                const currentUserId = user?.id || 'default_current_user';
+                const isMyMessage: boolean =
+                  msg.senderId === currentUserId || Boolean(msg.isSelf && !msg.senderId);
+
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} gap-1`}
+                  >
+                    <div className="flex items-center gap-2 px-1">
+                      <span className="text-[10px] text-purple-400/60 font-mono">{msg.time}</span>
+                      <span className="text-[11px] font-semibold text-purple-200">
+                        {isMyMessage ? 'You' : msg.senderName}
+                      </span>
                     </div>
-                    {msg.isSelf && (
-                      <CheckCheck className="w-3.5 h-3.5 text-purple-400 shrink-0 self-end mb-1" />
-                    )}
+                    <div className="flex items-center gap-2 max-w-[80%] sm:max-w-[70%]">
+                      <div
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDirectContextMenu({
+                            x: e.clientX,
+                            y: e.clientY,
+                            messageId: msg.id,
+                            messageText: msg.text,
+                            isSelf: isMyMessage,
+                          });
+                        }}
+                        className="px-4 py-2.5 rounded-2xl text-xs font-medium leading-relaxed text-white cursor-context-menu"
+                        style={{
+                          background: isMyMessage
+                            ? 'linear-gradient(135deg, #6d28d9 0%, #581c87 100%)'
+                            : 'linear-gradient(135deg, #4c1d95 0%, #3b0764 100%)',
+                          boxShadow: '0 4px 20px rgba(109,40,217,0.3)',
+                        }}
+                        title="Right-click for options"
+                      >
+                        {msg.text}
+                      </div>
+                      {isMyMessage && (
+                        <CheckCheck className="w-3.5 h-3.5 text-purple-400 shrink-0 self-end mb-1" />
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
-            <div ref={messagesEndRef} />
+            <div ref={directMessagesEndRef} />
           </div>
 
-          {/* Input Bar */}
+          {/* Input */}
           <div className="p-4 pt-1 flex-shrink-0">
             <form
-              onSubmit={handleSendMessage}
+              onSubmit={handleSendDirectMessage}
               className="flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-purple-700/40"
               style={{
                 background: 'rgba(14,5,30,0.9)',
@@ -525,15 +799,15 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
 
               <input
                 type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
+                value={directInputText}
+                onChange={(e) => setDirectInputText(e.target.value)}
                 placeholder={`Whisper to ${activeFriend.display_name}...`}
                 className="flex-1 bg-transparent text-xs text-white placeholder-purple-400/40 outline-none font-medium"
               />
 
               <button
                 type="submit"
-                disabled={!inputText.trim()}
+                disabled={!directInputText.trim()}
                 className="w-7 h-7 rounded-xl bg-purple-700 hover:bg-purple-600 disabled:opacity-40 flex items-center justify-center text-white transition-all cursor-pointer shrink-0 shadow-[0_0_10px_rgba(168,85,247,0.4)]"
                 title="Send"
               >
@@ -544,74 +818,185 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center bg-[#0e021e] text-purple-400/60 text-xs font-mono">
-          Select a companion to begin whispers
+          Select a coven group or companion to enter the chat room
         </div>
       )}
 
-      {/* ── Right Panel (Active Friend's Profile Info) ── */}
-      {showRightPanel && activeFriend && (
-        <div
-          className="w-72 sm:w-80 flex-shrink-0 flex flex-col border-l border-purple-900/30 overflow-hidden"
-          style={{ background: 'linear-gradient(180deg, #100522 0%, #0c031a 100%)' }}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 pt-5 pb-3">
-            <h3 className="text-sm font-bold text-white tracking-wide">Friend Info</h3>
-            <button
-              type="button"
-              onClick={() => setShowRightPanel(false)}
-              className="text-purple-300 hover:text-white transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Profile details */}
-          <div className="flex-1 overflow-y-auto px-5 space-y-6 pb-6 scrollbar-thin scrollbar-thumb-purple-900/40">
-            <div className="flex flex-col items-center text-center pt-2">
-              <div className="w-20 h-20 rounded-2xl overflow-hidden ring-2 ring-purple-500/60 shadow-[0_0_25px_rgba(168,85,247,0.4)] mb-3 bg-purple-950">
-                <img
-                  src={activeFriend.avatar_url || '/hauntly-icon.png'}
-                  alt={activeFriend.display_name}
-                  className="w-full h-full object-cover"
-                />
-              </div>
-              <h2 className="text-base font-bold text-white tracking-wide">
-                {activeFriend.display_name}
-              </h2>
-              <p className="text-xs text-purple-400 font-mono">@{activeFriend.username}</p>
-              {activeFriend.bio && (
-                <p className="text-[11px] text-purple-300/70 mt-2 max-w-[220px] leading-relaxed">
-                  {activeFriend.bio}
-                </p>
-              )}
+      {/* ══════════════════════════════════════════════════════════════════
+          COLUMN 3: GROUP INFO OR AI HELP RIGHT PANEL
+      ══════════════════════════════════════════════════════════════════ */}
+      {showRightPanel && (
+        rightPanelTab === 'ai' ? (
+          <AiHelpSidebar
+            selectedText={
+              aiSelectedText ||
+              (activeGroup?.last_message?.content ||
+                directMessages[directMessages.length - 1]?.text ||
+                "Let's meet at the haunted castle tonight!")
+            }
+            initialMode={aiMode}
+            onClose={() => setShowRightPanel(false)}
+            onInsertIntoChat={(text) => {
+              if (chatType === 'direct') {
+                setDirectInputText((prev) => (prev ? `${prev} ${text}` : text));
+              } else {
+                window.dispatchEvent(
+                  new CustomEvent('hauntly_insert_chat_text', { detail: { text } })
+                );
+              }
+            }}
+          />
+        ) : chatType === 'groups' && activeGroup && user ? (
+          <GroupInfoPanel
+            group={activeGroup}
+            members={groupMembers}
+            currentUserId={user.id}
+            friends={friends}
+            onClose={() => setShowRightPanel(false)}
+            onMembersUpdated={() => {
+              void fetchGroupMembers(activeGroup.id).then((res) => {
+                if (res.data) setGroupMembers(res.data);
+              });
+            }}
+          />
+        ) : chatType === 'direct' && activeFriend ? (
+          <div
+            className="w-72 sm:w-80 flex-shrink-0 flex flex-col border-l border-purple-900/30 overflow-hidden"
+            style={{ background: 'linear-gradient(180deg, #100522 0%, #0c031a 100%)' }}
+          >
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-purple-900/30">
+              <h3 className="text-sm font-bold text-white tracking-wide">Spirit Info</h3>
+              <button
+                type="button"
+                onClick={() => setShowRightPanel(false)}
+                className="w-7 h-7 rounded-full bg-purple-950/60 text-purple-300 hover:text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-
-            {/* Permanent ID */}
-            <div
-              className="rounded-xl border border-purple-800/40 p-3 space-y-1.5"
-              style={{ background: 'rgba(12,5,25,0.85)' }}
-            >
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
-                <Lock className="w-3.5 h-3.5 text-purple-400" />
-                <span>Hauntly ID</span>
+            <div className="flex-1 overflow-y-auto px-5 py-6 space-y-6">
+              <div className="flex flex-col items-center text-center">
+                <div className="w-20 h-20 rounded-2xl overflow-hidden ring-2 ring-purple-500/60 mb-3 bg-purple-950">
+                  <img
+                    src={activeFriend.avatar_url || '/hauntly-icon.png'}
+                    alt={activeFriend.display_name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 mt-1 justify-center">
+                  <h2 className="text-base font-bold text-white">{activeFriend.display_name}</h2>
+                  {activeFriendItem?.status === 'invited' ? (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      Invited
+                    </span>
+                  ) : (
+                    <span className="px-1.5 py-0.2 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      In Coven
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-purple-400 font-mono">@{activeFriend.username}</p>
+                {activeFriend.bio && (
+                  <p className="text-[11px] text-purple-300/70 mt-2">{activeFriend.bio}</p>
+                )}
               </div>
-              <div className="flex items-center justify-between bg-[#070210] rounded-lg px-2.5 py-1.5 font-mono text-xs text-purple-200">
-                <span>#{activeFriend.hauntly_id.toLowerCase()}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(activeFriend.hauntly_id);
-                  }}
-                  title="Copy ID"
-                  className="text-purple-400 hover:text-white cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                </button>
+              <div className="rounded-xl border border-purple-800/40 p-3 space-y-1 bg-[#0c0519]">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-300">
+                  <Lock className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Hauntly ID</span>
+                </div>
+                <p className="font-mono text-xs text-purple-200">#{activeFriend.hauntly_id.toLowerCase()}</p>
               </div>
             </div>
           </div>
+        ) : null
+      )}
+
+      {/* ── Direct Chat Message Context Menu ── */}
+      {directContextMenu && (
+        <MessageContextMenu
+          position={{ x: directContextMenu.x, y: directContextMenu.y }}
+          messageId={directContextMenu.messageId}
+          messageText={directContextMenu.messageText}
+          isSelf={directContextMenu.isSelf}
+          onClose={() => setDirectContextMenu(null)}
+          onDeleteRequest={(id, text) => {
+            setDirectDeleteTarget({ messageId: id, messageText: text });
+          }}
+          onCopyRequest={(text) => {
+            navigator.clipboard.writeText(text);
+            setDirectToast('Message copied!');
+          }}
+          onAiTranslateRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('translate');
+            setRightPanelTab('ai');
+            setShowRightPanel(true);
+          }}
+          onAiSummariseRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('summarise');
+            setRightPanelTab('ai');
+            setShowRightPanel(true);
+          }}
+          onAiRewriteRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('rewrite');
+            setRightPanelTab('ai');
+            setShowRightPanel(true);
+          }}
+          onAiRepliesRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('replies');
+            setRightPanelTab('ai');
+            setShowRightPanel(true);
+          }}
+        />
+      )}
+
+      {/* ── Direct Delete Confirmation Dialog ── */}
+      {directDeleteTarget && (
+        <DeleteConfirmationModal
+          isOpen={Boolean(directDeleteTarget)}
+          messageText={directDeleteTarget.messageText}
+          isDeleting={false}
+          onConfirm={async () => {
+            const currentUserId = user?.id || 'default_current_user';
+            if (selectedFriendId) {
+              await deleteDirectMessage({
+                messageId: directDeleteTarget.messageId,
+                userId1: currentUserId,
+                userId2: selectedFriendId,
+                currentUserId,
+              });
+            }
+            setDirectMessages((prev) =>
+              prev.filter((m) => m.id !== directDeleteTarget.messageId)
+            );
+            setDirectToast('Message banished forever.');
+            setDirectDeleteTarget(null);
+          }}
+          onCancel={() => setDirectDeleteTarget(null)}
+        />
+      )}
+
+      {/* ── Direct Toast Notification ── */}
+      {directToast && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[10001] px-4 py-2.5 rounded-2xl bg-[#1b122e] border border-purple-500/60 shadow-[0_8px_30px_rgba(0,0,0,0.85),0_0_20px_rgba(168,85,247,0.35)] text-white text-xs font-semibold flex items-center gap-2 animate-fadeIn backdrop-blur-md">
+          <Check className="w-3.5 h-3.5 text-emerald-400" />
+          <span>{directToast}</span>
         </div>
+      )}
+
+      {/* ── CREATE GROUP MODAL ── */}
+      {showCreateGroupModal && user && (
+        <CreateGroupModal
+          isOpen={showCreateGroupModal}
+          onClose={() => setShowCreateGroupModal(false)}
+          creatorId={user.id}
+          friends={friends}
+          onGroupCreated={handleGroupCreated}
+        />
       )}
     </div>
   );

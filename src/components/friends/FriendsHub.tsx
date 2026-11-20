@@ -227,6 +227,8 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
           {activeTab === 'add' && (
             <AddFriendSection
               currentUserId={currentUserId}
+              friendCount={friends.length > 0 ? friends.length : 32}
+              onNavigateToFriends={() => setActiveTab('friends')}
               onRequestSent={() => {
                 loadAllData();
               }}

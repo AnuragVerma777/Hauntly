@@ -8,7 +8,29 @@ const LOCAL_BLOCKS_KEY = 'hauntly_local_blocks';
 function getLocalFriendships(): Friendship[] {
   try {
     const raw = localStorage.getItem(LOCAL_FRIENDSHIPS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (raw) return JSON.parse(raw);
+
+    // Initial seed: User has invited Pumpkin King (HAUNT-8X29K) and Count Vlad (HAUNT-VAMP7)
+    const initialSeed: Friendship[] = [
+      {
+        id: 'seed_fr_jack',
+        requester_id: 'default_current_user',
+        addressee_id: 'usr_jack',
+        status: 'pending',
+        created_at: new Date(Date.now() - 3600000).toISOString(),
+        updated_at: new Date(Date.now() - 3600000).toISOString(),
+      },
+      {
+        id: 'seed_fr_vlad',
+        requester_id: 'default_current_user',
+        addressee_id: 'usr_vlad',
+        status: 'accepted',
+        created_at: new Date(Date.now() - 7200000).toISOString(),
+        updated_at: new Date(Date.now() - 7200000).toISOString(),
+      },
+    ];
+    localStorage.setItem(LOCAL_FRIENDSHIPS_KEY, JSON.stringify(initialSeed));
+    return initialSeed;
   } catch {
     return [];
   }
@@ -414,11 +436,15 @@ export async function fetchAcceptedFriends(
     if (!isSupabaseConfigured) {
       const list = getLocalFriendships();
       const accepted = list.filter(
-        (f) => f.status === 'accepted' && (f.requester_id === currentUserId || f.addressee_id === currentUserId)
+        (f) =>
+          f.status === 'accepted' &&
+          (f.requester_id === currentUserId ||
+            f.addressee_id === currentUserId ||
+            f.requester_id === 'default_current_user')
       );
       const entries: FriendEntry[] = [];
       for (const row of accepted) {
-        const isRequester = row.requester_id === currentUserId;
+        const isRequester = row.requester_id === currentUserId || row.requester_id === 'default_current_user';
         const friendId = isRequester ? row.addressee_id : row.requester_id;
         let friend = isRequester ? row.addressee : row.requester;
         if (!friend) {
@@ -489,7 +515,11 @@ export async function fetchPendingRequests(
     if (!isSupabaseConfigured) {
       const list = getLocalFriendships();
       const received = list.filter((f) => f.status === 'pending' && f.addressee_id === currentUserId);
-      const sent = list.filter((f) => f.status === 'pending' && f.requester_id === currentUserId);
+      const sent = list.filter(
+        (f) =>
+          f.status === 'pending' &&
+          (f.requester_id === currentUserId || f.requester_id === 'default_current_user')
+      );
 
       // Populate profiles if missing
       for (const r of received) {

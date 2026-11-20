@@ -6,6 +6,7 @@ import { LoginPage } from './pages/LoginPage';
 import { SignupPage } from './pages/SignupPage';
 import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { GlobePage } from './pages/GlobePage';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 
 // Automatically routes to /profile if authenticated, or /login if unauthenticated
@@ -56,6 +57,20 @@ const AppContent: React.FC = () => {
       <Route
         path="/chats"
         element={<Navigate to="/chat" replace />}
+      />
+
+      {/* Dedicated Interactive 3D Earth Globe */}
+      <Route
+        path="/globe"
+        element={
+          <ProtectedRoute>
+            <GlobePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/explore"
+        element={<Navigate to="/globe" replace />}
       />
 
       {/* Alias /dashboard directly to /profile */}

@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GothicCard } from '../ui/GothicCard';
 import { GothicButton } from '../ui/GothicButton';
-import { Hash, Send, Ghost, Moon, Radio } from 'lucide-react';
+import { Hash, Send, Ghost, Moon, Radio, Check } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { MessageContextMenu } from '../chat/MessageContextMenu';
+import { DeleteConfirmationModal } from '../chat/DeleteConfirmationModal';
+import { AiHelpSidebar } from '../chat/AiHelpSidebar';
 
 interface Message {
   id: string;
@@ -46,6 +49,33 @@ export const GothicChatPreview: React.FC = () => {
     },
   ]);
   const [inputVal, setInputVal] = useState('');
+
+  // Context Menu & Deletion & AI state
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    messageId: string;
+    messageText: string;
+    isSelf: boolean;
+  } | null>(null);
+
+  const [deleteTarget, setDeleteTarget] = useState<{
+    messageId: string;
+    messageText: string;
+  } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // AI Help Drawer
+  const [showAiSidebar, setShowAiSidebar] = useState(false);
+  const [aiSelectedText, setAiSelectedText] = useState('');
+  const [aiMode, setAiMode] = useState<'translate' | 'summarise' | 'rewrite' | 'replies'>('translate');
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,11 +190,23 @@ export const GothicChatPreview: React.FC = () => {
               </div>
 
               <div
-                className={`max-w-md p-3.5 rounded-2xl text-xs space-y-1 ${
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    messageId: m.id,
+                    messageText: m.text,
+                    isSelf: Boolean(m.isSelf),
+                  });
+                }}
+                className={`max-w-md p-3.5 rounded-2xl text-xs space-y-1 cursor-context-menu ${
                   m.isSelf
                     ? 'bg-gradient-to-r from-purple-900/80 to-purple-800/80 text-purple-100 rounded-tr-none border border-purple-600/50 shadow-[0_0_15px_rgba(168,85,247,0.2)]'
                     : 'bg-[#130921]/90 text-purple-200 rounded-tl-none border border-purple-900/60'
                 }`}
+                title="Right-click for options"
               >
                 <div className="flex items-center justify-between gap-3 text-[10px] text-purple-400/60">
                   <span className="font-semibold text-purple-300">{m.sender}</span>
@@ -190,6 +232,86 @@ export const GothicChatPreview: React.FC = () => {
           </GothicButton>
         </form>
       </div>
+
+      {/* ── Context Menu ── */}
+      {contextMenu && (
+        <MessageContextMenu
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          messageId={contextMenu.messageId}
+          messageText={contextMenu.messageText}
+          isSelf={contextMenu.isSelf}
+          onClose={() => setContextMenu(null)}
+          onDeleteRequest={(id, text) => {
+            setDeleteTarget({ messageId: id, messageText: text });
+          }}
+          onCopyRequest={(text) => {
+            navigator.clipboard.writeText(text);
+            setToastMessage('Message copied!');
+          }}
+          onAiTranslateRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('translate');
+            setShowAiSidebar(true);
+          }}
+          onAiSummariseRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('summarise');
+            setShowAiSidebar(true);
+          }}
+          onAiRewriteRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('rewrite');
+            setShowAiSidebar(true);
+          }}
+          onAiRepliesRequest={(text) => {
+            setAiSelectedText(text);
+            setAiMode('replies');
+            setShowAiSidebar(true);
+          }}
+        />
+      )}
+
+      {/* ── Delete Confirmation Modal ── */}
+      {deleteTarget && (
+        <DeleteConfirmationModal
+          isOpen={Boolean(deleteTarget)}
+          messageText={deleteTarget.messageText}
+          isDeleting={false}
+          onConfirm={() => {
+            setMessages((prev) => prev.filter((m) => m.id !== deleteTarget.messageId));
+            setToastMessage('Message banished forever.');
+            setDeleteTarget(null);
+          }}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {/* ── AI Help Sidebar Slide-over ── */}
+      {showAiSidebar && (
+        <div className="fixed inset-y-0 right-0 z-[10000] flex shadow-2xl animate-fadeIn">
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm -z-10"
+            onClick={() => setShowAiSidebar(false)}
+          />
+          <AiHelpSidebar
+            selectedText={aiSelectedText}
+            initialMode={aiMode}
+            onClose={() => setShowAiSidebar(false)}
+            onInsertIntoChat={(text) => {
+              setInputVal((prev) => (prev ? `${prev} ${text}` : text));
+              setShowAiSidebar(false);
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Toast Notification ── */}
+      {toastMessage && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[10001] px-4 py-2.5 rounded-2xl bg-[#1b122e] border border-purple-500/60 shadow-[0_8px_30px_rgba(0,0,0,0.85),0_0_20px_rgba(168,85,247,0.35)] text-white text-xs font-semibold flex items-center gap-2 animate-fadeIn backdrop-blur-md">
+          <Check className="w-3.5 h-3.5 text-emerald-400" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
     </GothicCard>
   );
 };
