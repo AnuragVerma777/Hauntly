@@ -5,41 +5,51 @@ import { getProfile } from './profileService';
 const LOCAL_FRIENDSHIPS_KEY = 'hauntly_local_friendships';
 const LOCAL_BLOCKS_KEY = 'hauntly_local_blocks';
 
+const INITIAL_FRIENDSHIPS_SEED: Friendship[] = [
+  {
+    id: 'seed_fr_jack',
+    requester_id: 'default_current_user',
+    addressee_id: 'usr_jack',
+    status: 'pending',
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    updated_at: new Date(Date.now() - 3600000).toISOString(),
+  },
+  {
+    id: 'seed_fr_vlad',
+    requester_id: 'default_current_user',
+    addressee_id: 'usr_vlad',
+    status: 'accepted',
+    created_at: new Date(Date.now() - 7200000).toISOString(),
+    updated_at: new Date(Date.now() - 7200000).toISOString(),
+  },
+];
+
+let memoryFriendships: Friendship[] = [...INITIAL_FRIENDSHIPS_SEED];
+let memoryBlocks: BlockRecord[] = [];
+
 function getLocalFriendships(): Friendship[] {
   try {
-    const raw = localStorage.getItem(LOCAL_FRIENDSHIPS_KEY);
-    if (raw) return JSON.parse(raw);
-
-    // Initial seed: User has invited Pumpkin King (HAUNT-8X29K) and Count Vlad (HAUNT-VAMP7)
-    const initialSeed: Friendship[] = [
-      {
-        id: 'seed_fr_jack',
-        requester_id: 'default_current_user',
-        addressee_id: 'usr_jack',
-        status: 'pending',
-        created_at: new Date(Date.now() - 3600000).toISOString(),
-        updated_at: new Date(Date.now() - 3600000).toISOString(),
-      },
-      {
-        id: 'seed_fr_vlad',
-        requester_id: 'default_current_user',
-        addressee_id: 'usr_vlad',
-        status: 'accepted',
-        created_at: new Date(Date.now() - 7200000).toISOString(),
-        updated_at: new Date(Date.now() - 7200000).toISOString(),
-      },
-    ];
-    localStorage.setItem(LOCAL_FRIENDSHIPS_KEY, JSON.stringify(initialSeed));
-    return initialSeed;
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(LOCAL_FRIENDSHIPS_KEY);
+      if (raw) return JSON.parse(raw);
+      localStorage.setItem(LOCAL_FRIENDSHIPS_KEY, JSON.stringify(INITIAL_FRIENDSHIPS_SEED));
+      return INITIAL_FRIENDSHIPS_SEED;
+    }
   } catch {
-    return [];
+    // ignore
   }
+  return memoryFriendships;
 }
 
 function saveLocalFriendships(list: Friendship[]) {
+  memoryFriendships = list;
   try {
-    localStorage.setItem(LOCAL_FRIENDSHIPS_KEY, JSON.stringify(list));
-    window.dispatchEvent(new Event('hauntly_storage_update'));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_FRIENDSHIPS_KEY, JSON.stringify(list));
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('hauntly_storage_update'));
+    }
   } catch (e) {
     console.warn('Failed to save friendships', e);
   }
@@ -47,17 +57,25 @@ function saveLocalFriendships(list: Friendship[]) {
 
 function getLocalBlocks(): BlockRecord[] {
   try {
-    const raw = localStorage.getItem(LOCAL_BLOCKS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(LOCAL_BLOCKS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    }
   } catch {
-    return [];
+    // ignore
   }
+  return memoryBlocks;
 }
 
 function saveLocalBlocks(list: BlockRecord[]) {
+  memoryBlocks = list;
   try {
-    localStorage.setItem(LOCAL_BLOCKS_KEY, JSON.stringify(list));
-    window.dispatchEvent(new Event('hauntly_storage_update'));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_BLOCKS_KEY, JSON.stringify(list));
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('hauntly_storage_update'));
+    }
   } catch (e) {
     console.warn('Failed to save blocks', e);
   }
@@ -108,13 +126,48 @@ export async function getRelationshipStatus(
       return 'blocked';
     }
 
-    const { data: friendship } = await supabase
+    const { data: friendship, error: friendErr } = await supabase
       .from('friendships')
-      .select('id, requester_id, addressee_id, status')
-      .or(`and(requester_id.eq.${currentUserId},addressee_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},addressee_id.eq.${currentUserId})`)
+      .select('id, requester_id, addressee_id, sender_id, receiver_id, status')
+      .or(`and(requester_id.eq.${currentUserId},addressee_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},addressee_id.eq.${currentUserId}),and(sender_id.eq.${currentUserId},receiver_id.eq.${targetUserId}),and(sender_id.eq.${targetUserId},receiver_id.eq.${currentUserId})`)
       .maybeSingle();
 
+    if (friendErr) {
+      console.warn('Remote friendships query failed in getRelationshipStatus, checking local:', friendErr.message);
+      const friendships = getLocalFriendships();
+      const found = friendships.find(
+        (f) =>
+          (f.requester_id === currentUserId && f.addressee_id === targetUserId) ||
+          (f.requester_id === targetUserId && f.addressee_id === currentUserId) ||
+          (f.sender_id === currentUserId && f.receiver_id === targetUserId) ||
+          (f.sender_id === targetUserId && f.receiver_id === currentUserId)
+      );
+      if (!found) return 'none';
+      if (found.status === 'accepted') return 'friends';
+      if (found.status === 'pending') {
+        const isReq = found.requester_id === currentUserId || found.sender_id === currentUserId;
+        return isReq ? 'pending_sent' : 'pending_received';
+      }
+      return 'none';
+    }
+
     if (!friendship) {
+      // Check local cache in case pending request was just created locally
+      const friendships = getLocalFriendships();
+      const found = friendships.find(
+        (f) =>
+          (f.requester_id === currentUserId && f.addressee_id === targetUserId) ||
+          (f.requester_id === targetUserId && f.addressee_id === currentUserId) ||
+          (f.sender_id === currentUserId && f.receiver_id === targetUserId) ||
+          (f.sender_id === targetUserId && f.receiver_id === currentUserId)
+      );
+      if (found) {
+        if (found.status === 'accepted') return 'friends';
+        if (found.status === 'pending') {
+          const isReq = found.requester_id === currentUserId || found.sender_id === currentUserId;
+          return isReq ? 'pending_sent' : 'pending_received';
+        }
+      }
       return 'none';
     }
 
@@ -123,16 +176,27 @@ export async function getRelationshipStatus(
     }
 
     if (friendship.status === 'pending') {
-      if (friendship.requester_id === currentUserId) {
-        return 'pending_sent';
-      } else {
-        return 'pending_received';
-      }
+      const isReq = friendship.requester_id === currentUserId || (friendship as any).sender_id === currentUserId;
+      return isReq ? 'pending_sent' : 'pending_received';
     }
 
     return 'none';
   } catch (err) {
-    console.warn('Error checking relationship status:', err);
+    console.warn('Error checking relationship status, falling back to local:', err);
+    const friendships = getLocalFriendships();
+    const found = friendships.find(
+      (f) =>
+        (f.requester_id === currentUserId && f.addressee_id === targetUserId) ||
+        (f.requester_id === targetUserId && f.addressee_id === currentUserId) ||
+        (f.sender_id === currentUserId && f.receiver_id === targetUserId) ||
+        (f.sender_id === targetUserId && f.receiver_id === currentUserId)
+    );
+    if (!found) return 'none';
+    if (found.status === 'accepted') return 'friends';
+    if (found.status === 'pending') {
+      const isReq = found.requester_id === currentUserId || found.sender_id === currentUserId;
+      return isReq ? 'pending_sent' : 'pending_received';
+    }
     return 'none';
   }
 }
@@ -163,42 +227,100 @@ export async function sendFriendRequest(
       return { data: null, error: new Error('Unable to send request to this soul due to ethereal wards.') };
     }
 
+    const [reqProf, addProf] = await Promise.all([
+      getProfile(requesterId),
+      getProfile(addresseeId),
+    ]);
+
+    const localFriendship: Friendship = {
+      id: 'req_' + Math.random().toString(36).substring(2, 9),
+      requester_id: requesterId,
+      addressee_id: addresseeId,
+      sender_id: requesterId,
+      receiver_id: addresseeId,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      requester: reqProf.data || undefined,
+      addressee: addProf.data || undefined,
+    };
+
     if (!isSupabaseConfigured) {
-      const [reqProf, addProf] = await Promise.all([
-        getProfile(requesterId),
-        getProfile(addresseeId),
-      ]);
-      const newFriendship: Friendship = {
-        id: 'req_' + Math.random().toString(36).substring(2, 9),
-        requester_id: requesterId,
-        addressee_id: addresseeId,
-        status: 'pending',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        requester: reqProf.data || undefined,
-        addressee: addProf.data || undefined,
-      };
       const list = getLocalFriendships();
-      list.push(newFriendship);
+      list.push(localFriendship);
       saveLocalFriendships(list);
-      return { data: newFriendship, error: null };
+      return { data: localFriendship, error: null };
     }
 
-    const { data, error } = await supabase
-      .from('friendships')
-      .insert({
-        requester_id: requesterId,
-        addressee_id: addresseeId,
-        status: 'pending',
-      })
-      .select('id, requester_id, addressee_id, status, created_at, updated_at')
-      .single();
+    try {
+      // Insert with both naming conventions (requester_id/addressee_id & sender_id/receiver_id)
+      let data: any = null;
+      let error: any = null;
 
-    if (error) {
-      return { data: null, error: new Error(error.message) };
+      const firstAttempt = await supabase
+        .from('friendships')
+        .insert({
+          requester_id: requesterId,
+          addressee_id: addresseeId,
+          sender_id: requesterId,
+          receiver_id: addresseeId,
+          status: 'pending',
+        })
+        .select('id, requester_id, addressee_id, sender_id, receiver_id, status, created_at, updated_at')
+        .single();
+
+      data = firstAttempt.data;
+      error = firstAttempt.error;
+
+      // If columns sender_id/receiver_id don't exist yet in remote table, retry with standard columns
+      if (error && error.message.includes('column')) {
+        const retry = await supabase
+          .from('friendships')
+          .insert({
+            requester_id: requesterId,
+            addressee_id: addresseeId,
+            status: 'pending',
+          })
+          .select('id, requester_id, addressee_id, status, created_at, updated_at')
+          .single();
+        data = retry.data;
+        error = retry.error;
+      }
+
+      if (error) {
+        if (error.code === '23505') {
+          return { data: null, error: new Error('A spectral request has already been bound with this spirit.') };
+        }
+        // If table missing (PGRST205), fall back to local friendship
+        console.warn('Supabase remote insert failed for friendships, using local fallback:', error.message);
+        const list = getLocalFriendships();
+        list.push(localFriendship);
+        saveLocalFriendships(list);
+        return { data: localFriendship, error: null };
+      }
+
+      if (data) {
+        // Synchronize into local storage
+        const list = getLocalFriendships();
+        const existingIdx = list.findIndex((f) => f.id === data.id);
+        const merged = { ...localFriendship, ...data };
+        if (existingIdx >= 0) {
+          list[existingIdx] = merged;
+        } else {
+          list.push(merged);
+        }
+        saveLocalFriendships(list);
+        return { data: merged, error: null };
+      }
+    } catch (insertErr) {
+      console.warn('Exception during remote friend request, applying local fallback:', insertErr);
+      const list = getLocalFriendships();
+      list.push(localFriendship);
+      saveLocalFriendships(list);
+      return { data: localFriendship, error: null };
     }
 
-    return { data, error: null };
+    return { data: localFriendship, error: null };
   } catch (err: unknown) {
     return { data: null, error: err instanceof Error ? err : new Error('Failed to send friend request') };
   }
@@ -212,17 +334,20 @@ export async function acceptFriendRequest(
   currentUserId: string
 ): Promise<{ error: Error | null }> {
   try {
+    // 1. Always update local storage first so UI reacts immediately
+    const list = getLocalFriendships();
+    const target = list.find((f) => f.id === friendshipId && (f.addressee_id === currentUserId || f.receiver_id === currentUserId));
+    if (target) {
+      target.status = 'accepted';
+      target.updated_at = new Date().toISOString();
+      saveLocalFriendships(list);
+    }
+
     if (!isSupabaseConfigured) {
-      const list = getLocalFriendships();
-      const target = list.find((f) => f.id === friendshipId && f.addressee_id === currentUserId);
-      if (target) {
-        target.status = 'accepted';
-        target.updated_at = new Date().toISOString();
-        saveLocalFriendships(list);
-      }
       return { error: null };
     }
 
+    // 2. Persist to remote Supabase friendships table
     const { error } = await supabase
       .from('friendships')
       .update({
@@ -230,10 +355,11 @@ export async function acceptFriendRequest(
         updated_at: new Date().toISOString(),
       })
       .eq('id', friendshipId)
-      .eq('addressee_id', currentUserId);
+      .or(`addressee_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
 
     if (error) {
-      return { error: new Error(error.message) };
+      console.warn('Supabase remote acceptFriendRequest failed, local status kept:', error.message);
+      return { error: null }; // Local state updated, do not fail user interaction
     }
     return { error: null };
   } catch (err: unknown) {
@@ -249,21 +375,25 @@ export async function rejectFriendRequest(
   currentUserId: string
 ): Promise<{ error: Error | null }> {
   try {
+    // 1. Always update local storage first
+    const list = getLocalFriendships();
+    const next = list.filter((f) => !(f.id === friendshipId && (f.addressee_id === currentUserId || f.receiver_id === currentUserId)));
+    saveLocalFriendships(next);
+
     if (!isSupabaseConfigured) {
-      const list = getLocalFriendships();
-      const next = list.filter((f) => !(f.id === friendshipId && f.addressee_id === currentUserId));
-      saveLocalFriendships(next);
       return { error: null };
     }
 
+    // 2. Persist to remote Supabase friendships table
     const { error } = await supabase
       .from('friendships')
       .delete()
       .eq('id', friendshipId)
-      .eq('addressee_id', currentUserId);
+      .or(`addressee_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
 
     if (error) {
-      return { error: new Error(error.message) };
+      console.warn('Supabase remote rejectFriendRequest failed, local status kept:', error.message);
+      return { error: null };
     }
     return { error: null };
   } catch (err: unknown) {
@@ -279,22 +409,26 @@ export async function cancelFriendRequest(
   currentUserId: string
 ): Promise<{ error: Error | null }> {
   try {
+    // 1. Always update local storage first
+    const list = getLocalFriendships();
+    const next = list.filter((f) => !(f.id === friendshipId && (f.requester_id === currentUserId || f.sender_id === currentUserId)));
+    saveLocalFriendships(next);
+
     if (!isSupabaseConfigured) {
-      const list = getLocalFriendships();
-      const next = list.filter((f) => !(f.id === friendshipId && f.requester_id === currentUserId));
-      saveLocalFriendships(next);
       return { error: null };
     }
 
+    // 2. Persist to remote Supabase friendships table
     const { error } = await supabase
       .from('friendships')
       .delete()
       .eq('id', friendshipId)
-      .eq('requester_id', currentUserId)
+      .or(`requester_id.eq.${currentUserId},sender_id.eq.${currentUserId}`)
       .eq('status', 'pending');
 
     if (error) {
-      return { error: new Error(error.message) };
+      console.warn('Supabase remote cancelFriendRequest failed, local status kept:', error.message);
+      return { error: null };
     }
     return { error: null };
   } catch (err: unknown) {
@@ -310,23 +444,34 @@ export async function removeFriend(
   currentUserId: string
 ): Promise<{ error: Error | null }> {
   try {
+    // 1. Always update local storage first
+    const list = getLocalFriendships();
+    const next = list.filter(
+      (f) =>
+        !(
+          f.id === friendshipId &&
+          (f.requester_id === currentUserId ||
+            f.addressee_id === currentUserId ||
+            f.sender_id === currentUserId ||
+            f.receiver_id === currentUserId)
+        )
+    );
+    saveLocalFriendships(next);
+
     if (!isSupabaseConfigured) {
-      const list = getLocalFriendships();
-      const next = list.filter(
-        (f) => !(f.id === friendshipId && (f.requester_id === currentUserId || f.addressee_id === currentUserId))
-      );
-      saveLocalFriendships(next);
       return { error: null };
     }
 
+    // 2. Persist to remote Supabase friendships table
     const { error } = await supabase
       .from('friendships')
       .delete()
       .eq('id', friendshipId)
-      .or(`requester_id.eq.${currentUserId},addressee_id.eq.${currentUserId}`);
+      .or(`requester_id.eq.${currentUserId},addressee_id.eq.${currentUserId},sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
 
     if (error) {
-      return { error: new Error(error.message) };
+      console.warn('Supabase remote removeFriend failed, local status kept:', error.message);
+      return { error: null };
     }
     return { error: null };
   } catch (err: unknown) {

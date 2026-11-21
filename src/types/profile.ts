@@ -20,6 +20,8 @@ export interface Friendship {
   id: string;
   requester_id: string;
   addressee_id: string;
+  sender_id?: string;
+  receiver_id?: string;
   status: FriendshipStatus;
   created_at: string;
   updated_at: string;
