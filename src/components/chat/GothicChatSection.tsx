@@ -24,7 +24,7 @@ import { useAuth } from '../../hooks/useAuth';
 import type { FriendEntry, Profile } from '../../types/profile';
 import type { Group, GroupMember } from '../../types/groupChat';
 import { fetchAcceptedFriends, fetchPendingRequests } from '../../lib/friendsService';
-import { ensureProfile, searchByHauntlyId, getProfile } from '../../lib/profileService';
+import { ensureProfile, searchByHauntlyId, getProfile, createInviteUrl } from '../../lib/profileService';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { fetchUserGroups, fetchGroupMembers } from '../../lib/groupChatService';
 import { GroupChatRoom } from './GroupChatRoom';
@@ -406,9 +406,11 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
   };
 
   const getInviteUrl = () => {
+    if (profile) {
+      return createInviteUrl(profile);
+    }
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://hauntly-eight.vercel.app';
-    const hauntId = profile?.hauntly_id || '';
-    return `${origin}/profile?addFriend=${encodeURIComponent(hauntId)}`;
+    return `${origin}/profile?addFriend=HAUNT-MYID`;
   };
 
   const handleCopyInviteLink = () => {

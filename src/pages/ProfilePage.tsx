@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import type { Profile } from '../types/profile';
-import { ensureProfile, updateProfile } from '../lib/profileService';
+import { ensureProfile, updateProfile, parseInviteToken } from '../lib/profileService';
 import { searchPlaces, type GeocodingResult } from '../lib/locationSuggestionService';
 import { FriendsHub } from '../components/friends/FriendsHub';
 import { GothicChatSection } from '../components/chat/GothicChatSection';
@@ -80,10 +80,15 @@ export const ProfilePage: React.FC<{
     | null;
   const addFriendParam = searchParams.get('addFriend');
   const friendIdParam = searchParams.get('friendId');
+  const inviteParam = searchParams.get('invite');
+
+  // Decode portable web invite if present
+  const parsedInviteProfile = inviteParam ? parseInviteToken(inviteParam) : null;
+  const effectiveAddFriend = parsedInviteProfile?.hauntly_id || addFriendParam;
 
   // Navigation tab
   const [activeTab, setActiveTab] = useState<'settings' | 'friends' | 'chats' | 'explore'>(() => {
-    if (addFriendParam) return 'friends';
+    if (effectiveAddFriend) return 'friends';
     if (friendIdParam) return 'chats';
     return defaultTab || tabParam || 'settings';
   });
@@ -790,8 +795,8 @@ export const ProfilePage: React.FC<{
             </div>
             <FriendsHub
               currentUserId={user.id}
-              initialTab={addFriendParam ? 'add' : 'friends'}
-              initialAddFriendQuery={addFriendParam || ''}
+              initialTab={effectiveAddFriend ? 'add' : 'friends'}
+              initialAddFriendQuery={effectiveAddFriend || ''}
             />
           </div>
         )}

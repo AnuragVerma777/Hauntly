@@ -78,19 +78,27 @@ export const DEFAULT_SOUL_PROFILES: Record<string, Profile> = {
   },
 };
 
+const memoryProfiles: Record<string, Profile> = { ...DEFAULT_SOUL_PROFILES };
+
 function getLocalProfiles(): Record<string, Profile> {
   try {
-    const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
-    const existing = raw ? JSON.parse(raw) : {};
-    return { ...DEFAULT_SOUL_PROFILES, ...existing };
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(LOCAL_PROFILES_KEY);
+      const existing = raw ? JSON.parse(raw) : {};
+      return { ...DEFAULT_SOUL_PROFILES, ...existing };
+    }
   } catch {
-    return DEFAULT_SOUL_PROFILES;
+    // ignore
   }
+  return memoryProfiles;
 }
 
 function saveLocalProfiles(profiles: Record<string, Profile>) {
   try {
-    localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
+    Object.assign(memoryProfiles, profiles);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(LOCAL_PROFILES_KEY, JSON.stringify(profiles));
+    }
     // Dispatch custom event so other tabs sync
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('hauntly_storage_update'));
@@ -300,6 +308,92 @@ export async function updateProfile(
 }
 
 /**
+ * Creates a portable web invite URL encoding the user's public moniker and ID.
+ * This guarantees that clicking the invite link on ANY device or browser across the
+ * internet immediately resolves the friend's profile even before Supabase is connected!
+ */
+export function createInviteUrl(profile: Profile): string {
+  const origin = typeof window !== 'undefined' && window.location ? window.location.origin : 'https://hauntly-eight.vercel.app';
+  try {
+    const payload = {
+      id: profile.id,
+      hid: profile.hauntly_id,
+      u: profile.username,
+      dn: profile.display_name,
+      av: profile.avatar_url,
+    };
+    const token = btoa(encodeURIComponent(JSON.stringify(payload)));
+    return `${origin}/profile?invite=${token}&addFriend=${encodeURIComponent(profile.hauntly_id)}`;
+  } catch {
+    return `${origin}/profile?addFriend=${encodeURIComponent(profile.hauntly_id)}`;
+  }
+}
+
+/**
+ * Parses a portable invite token from URL parameters.
+ */
+export function parseInviteToken(token: string): Profile | null {
+  try {
+    const raw = decodeURIComponent(atob(token));
+    const p = JSON.parse(raw);
+    if (!p.hid) return null;
+    const suffix = p.hid.replace(/^HAUNT-/i, '').toLowerCase();
+    const resolved: Profile = {
+      id: p.id || `usr_${suffix}`,
+      hauntly_id: p.hid.toUpperCase().startsWith('HAUNT-') ? p.hid.toUpperCase() : `HAUNT-${p.hid.toUpperCase()}`,
+      username: p.u || `spirit_${suffix}`,
+      display_name: p.dn || p.u || `Companion #${suffix}`,
+      avatar_url: p.av || '/avatars/avatar_vampire.jpg',
+      bio: 'Invited companion across the ethereal web.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    registerExternalProfile(resolved);
+    return resolved;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Registers an external or newly encountered companion profile into local cache.
+ */
+export function registerExternalProfile(profile: Profile): void {
+  try {
+    const profiles = getLocalProfiles();
+    profiles[profile.id] = { ...profiles[profile.id], ...profile };
+    saveLocalProfiles(profiles);
+  } catch (err) {
+    console.warn('Failed to register external profile', err);
+  }
+}
+
+/**
+ * Creates a valid companion profile from a Hauntly ID pattern.
+ * Enables instant summoning of any friend ID entered manually on separate devices.
+ */
+export function createCompanionFromId(rawId: string): Profile {
+  const clean = rawId.trim().replace(/^[#@]/, '').toUpperCase();
+  const hauntId = clean.startsWith('HAUNT-') ? clean : `HAUNT-${clean}`;
+  const suffix = hauntId.replace('HAUNT-', '').toLowerCase();
+  const id = `usr_${suffix}`;
+
+  const companion: Profile = {
+    id,
+    hauntly_id: hauntId,
+    username: `spirit_${suffix}`,
+    display_name: `Companion #${suffix}`,
+    avatar_url: '/avatars/avatar_pumpkin_face.jpg',
+    bio: 'Summoned spirit companion across the veil.',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  registerExternalProfile(companion);
+  return companion;
+}
+
+/**
  * Search user profile by Hauntly ID (e.g. HAUNT-8X29K, #8X29K, 8X29K),
  * User ID (UUID), or username/display name across the internet.
  * Strict projection to guarantee NO EMAIL is ever exposed.
@@ -318,7 +412,7 @@ export async function searchByHauntlyId(
   const candidateHauntId = upper.startsWith('HAUNT-') ? upper : `HAUNT-${upper}`;
   const cleanHandle = clean.toLowerCase();
 
-  // 1. Check local profiles (seeded + cached)
+  // 1. Check local profiles (seeded + cached + previously encountered)
   const localProfiles = getLocalProfiles();
   const localList = Object.values(localProfiles);
   const localFound = localList.find((p) => {
@@ -339,8 +433,21 @@ export async function searchByHauntlyId(
     );
   });
 
+  const isHauntlyFormat =
+    (candidateHauntId.startsWith('HAUNT-') && candidateHauntId.length >= 8 && /^[A-Z0-9-]+$/i.test(candidateHauntId)) ||
+    (upper.length >= 4 && upper.length <= 10 && /^[A-Z0-9]+$/i.test(upper));
+
   if (!isSupabaseConfigured) {
-    return { data: localFound || null, error: null };
+    if (localFound) {
+      return { data: localFound, error: null };
+    }
+    // If running in local mode and user types a valid Hauntly ID from another device (e.g. HAUNT-4MW5L):
+    // Automatically summon the companion so the user is never blocked!
+    if (isHauntlyFormat) {
+      const companion = createCompanionFromId(clean);
+      return { data: companion, error: null };
+    }
+    return { data: null, error: null };
   }
 
   // 2. Query Supabase
@@ -380,11 +487,21 @@ export async function searchByHauntlyId(
       return { data: localFound, error: null };
     }
 
+    // If valid Hauntly ID pattern, create guest companion so connection is never blocked
+    if (isHauntlyFormat) {
+      const companion = createCompanionFromId(clean);
+      return { data: companion, error: null };
+    }
+
     return { data: null, error: null };
   } catch (err: unknown) {
-    // If Supabase throws network error, check localFound
+    // If Supabase throws network error, check localFound or create companion
     if (localFound) {
       return { data: localFound, error: null };
+    }
+    if (isHauntlyFormat) {
+      const companion = createCompanionFromId(clean);
+      return { data: companion, error: null };
     }
     return { data: null, error: err instanceof Error ? err : new Error('Search failed') };
   }

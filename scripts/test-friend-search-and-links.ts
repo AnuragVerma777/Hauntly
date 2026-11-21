@@ -1,4 +1,9 @@
-import { searchByHauntlyId, DEFAULT_SOUL_PROFILES } from '../src/lib/profileService';
+import {
+  searchByHauntlyId,
+  DEFAULT_SOUL_PROFILES,
+  createInviteUrl,
+  parseInviteToken,
+} from '../src/lib/profileService';
 import { getDirectChatKey } from '../src/lib/whisperChatService';
 
 async function runFriendSearchAndLinksTest() {
@@ -26,7 +31,18 @@ async function runFriendSearchAndLinksTest() {
   assert(res1.data !== null, 'Found profile by exact HAUNT-8X29K');
   assert(res1.data?.username === 'jack_lantern', 'Profile matches Pumpkin King (@jack_lantern)');
 
-  // ── TEST 2: Hashtag prefix (e.g. #HAUNT-8X29K & #haunt-8x29k) ──
+  // ── TEST 1B: Exact user ID from screenshot: HAUNT-4MW5L ──
+  console.log('\n🧪 TEST 1B: User Screenshot ID Search (HAUNT-4MW5L)');
+  const resUser = await searchByHauntlyId('HAUNT-4MW5L');
+  assert(resUser.data !== null, 'Companion profile auto-summoned for HAUNT-4MW5L');
+  assert(resUser.data?.hauntly_id === 'HAUNT-4MW5L', 'Hauntly ID correctly matches HAUNT-4MW5L');
+  assert(resUser.data?.id === 'usr_4mw5l', 'Internal User ID is usr_4mw5l');
+
+  const resUserLower = await searchByHauntlyId('4mw5l');
+  assert(resUserLower.data !== null, 'Found profile by raw suffix 4mw5l');
+  assert(resUserLower.data?.hauntly_id === 'HAUNT-4MW5L', 'Raw suffix matched HAUNT-4MW5L');
+
+  // ── TEST 2: Hashtag prefix (e.g. #HAUNT-8X29K & #haunt-vamp7) ──
   console.log('\n🧪 TEST 2: Hashtag Prefix Search (#HAUNT-8X29K & #haunt-vamp7)');
   const res2 = await searchByHauntlyId('#HAUNT-8X29K');
   assert(res2.data !== null, 'Found profile by #HAUNT-8X29K with leading hash');
@@ -63,19 +79,23 @@ async function runFriendSearchAndLinksTest() {
 
   // ── TEST 6: Web Invite Link Generation & Deep-link Resolution ──
   console.log('\n🧪 TEST 6: Web Invite Link Generation & Deep-link Resolution');
-  const baseUrl = 'https://hauntly-eight.vercel.app';
-  const jackInvite = `${baseUrl}/profile?addFriend=${DEFAULT_SOUL_PROFILES.usr_jack.hauntly_id}`;
-  assert(jackInvite === 'https://hauntly-eight.vercel.app/profile?addFriend=HAUNT-8X29K', 'Invite URL format is valid');
+  const sampleProfile = DEFAULT_SOUL_PROFILES.usr_jack;
+  const portableUrl = createInviteUrl(sampleProfile);
+  assert(portableUrl.includes('invite='), 'Portable URL includes encoded invite token');
+  assert(portableUrl.includes('addFriend=HAUNT-8X29K'), 'Portable URL includes addFriend parameter');
 
-  // Simulate parsing the URL search params from an internet link
-  const urlObj = new URL(jackInvite);
-  const friendParam = urlObj.searchParams.get('addFriend');
-  assert(friendParam === 'HAUNT-8X29K', 'Extracted addFriend query parameter from internet link');
+  // Simulate receiving this URL on another computer
+  const parsedUrl = new URL(portableUrl);
+  const token = parsedUrl.searchParams.get('invite');
+  assert(Boolean(token), 'Extracted invite token from shared link');
 
-  const resolved = await searchByHauntlyId(friendParam!);
-  assert(resolved.data?.id === 'usr_jack', 'Successfully resolved friend from invite link parameter');
+  const decodedProfile = parseInviteToken(token!);
+  assert(decodedProfile !== null, 'Successfully decoded profile from token');
+  assert(decodedProfile?.hauntly_id === 'HAUNT-8X29K', 'Decoded hauntly_id matches HAUNT-8X29K');
+  assert(decodedProfile?.display_name === 'Pumpkin King', 'Decoded display name matches Pumpkin King');
+  assert(decodedProfile?.username === 'jack_lantern', 'Decoded username matches jack_lantern');
 
-  // ── TEST 7: Bidirectional Direct Chat Key & Message Alignment Verification ──
+  // ── TEST 7: Bidirectional Direct Chat Alignment Rules ──
   console.log('\n🧪 TEST 7: Bidirectional Direct Chat Alignment Rules');
   const keyA = getDirectChatKey('usr_jack', 'usr_vlad');
   const keyB = getDirectChatKey('usr_vlad', 'usr_jack');

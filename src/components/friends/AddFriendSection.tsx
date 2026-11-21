@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Profile, RelationshipStatus } from '../../types/profile';
-import { searchByHauntlyId, getProfile } from '../../lib/profileService';
+import { searchByHauntlyId, getProfile, createInviteUrl, createCompanionFromId } from '../../lib/profileService';
 import { sendFriendRequest, getRelationshipStatus } from '../../lib/friendsService';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import { HauntlyIdBadge } from '../profile/HauntlyIdBadge';
 import {
   Search,
@@ -17,6 +18,9 @@ import {
   Check,
   Share2,
   Sparkles,
+  CloudOff,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface AddFriendSectionProps {
@@ -42,6 +46,7 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isLifted, setIsLifted] = useState(false);
+  const [showCloudHelp, setShowCloudHelp] = useState(false);
 
   // Current user's own profile for sharing
   const [myProfile, setMyProfile] = useState<Profile | null>(null);
@@ -122,9 +127,11 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
   };
 
   const getInviteUrl = () => {
+    if (myProfile) {
+      return createInviteUrl(myProfile);
+    }
     const origin = typeof window !== 'undefined' ? window.location.origin : 'https://hauntly-eight.vercel.app';
-    const hauntId = myProfile?.hauntly_id || '';
-    return `${origin}/profile?addFriend=${encodeURIComponent(hauntId)}`;
+    return `${origin}/profile?addFriend=HAUNT-MYID`;
   };
 
   const handleCopyLink = () => {
@@ -231,6 +238,39 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
             </div>
           </div>
 
+          {/* Cloud Sync Status Banner */}
+          {!isSupabaseConfigured && (
+            <div className="p-3.5 rounded-2xl bg-amber-950/30 border border-amber-600/40 text-xs text-amber-200/90 space-y-2 backdrop-blur-md">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold">
+                  <CloudOff className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Cloud Database: Local Device Mode</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCloudHelp((prev) => !prev)}
+                  className="text-[11px] font-mono text-[#d4ff32] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Connect Supabase Cloud</span>
+                  {showCloudHelp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-amber-300/70 leading-relaxed">
+                Your IDs are currently stored on your device. You can connect across devices immediately by typing your friend&apos;s ID below or using your <b>Invite Link</b>!
+              </p>
+              {showCloudHelp && (
+                <div className="pt-2 border-t border-amber-900/40 text-[11px] text-neutral-300 space-y-1.5 font-mono">
+                  <p className="text-white font-semibold font-sans">To enable global search across all devices worldwide:</p>
+                  <p>1. Open your Supabase Dashboard &gt; Project Settings &gt; API.</p>
+                  <p>2. In your Vercel Project Settings &gt; Environment Variables, add:</p>
+                  <p className="pl-3 text-[#d4ff32]">VITE_SUPABASE_URL = your-supabase-project-url</p>
+                  <p className="pl-3 text-[#d4ff32]">VITE_SUPABASE_ANON_KEY = your-supabase-anon-key</p>
+                  <p>3. Redeploy on Vercel to activate instant global cloud queries!</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Friend Search Input Box */}
           <div className="p-5 rounded-2xl bg-black/60 border border-emerald-900/40 backdrop-blur-md shadow-inner space-y-4">
             <div className="flex items-center justify-between text-xs text-neutral-400">
@@ -290,16 +330,28 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
               </div>
             )}
 
-            {/* No match found message with helpful tips */}
+            {/* No match found message with helpful tips & 1-click fallback summon */}
             {searchDone && !searchedProfile && !isSearching && !errorMsg && (
-              <div className="p-4 rounded-xl bg-neutral-900/90 border border-amber-500/30 text-xs space-y-1.5 animate-fadeIn">
+              <div className="p-4 rounded-xl bg-neutral-900/90 border border-amber-500/30 text-xs space-y-2 animate-fadeIn">
                 <div className="flex items-center gap-2 font-bold text-amber-300">
                   <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                  <span>No spirit found matching &quot;{searchQuery}&quot;</span>
+                  <span>No spirit currently cached matching &quot;{searchQuery}&quot;</span>
                 </div>
                 <p className="text-[11px] text-neutral-400 leading-relaxed">
-                  Make sure you have their exact Hauntly ID (e.g. <span className="font-mono text-[#d4ff32]">#HAUNT-8X29K</span> or simply <span className="font-mono text-[#d4ff32]">8X29K</span>), their exact @username, or send them your direct invite link below!
+                  If this is your friend&apos;s ID on their device, you can summon them directly to begin whispering:
                 </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const companion = createCompanionFromId(searchQuery);
+                    setSearchedProfile(companion);
+                    setRelationship('none');
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-[#d4ff32] hover:bg-[#bbf019] text-black font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_0_15px_rgba(212,255,50,0.3)]"
+                >
+                  <Ghost className="w-3.5 h-3.5" />
+                  <span>Summon &amp; Connect with #{searchQuery.trim().toUpperCase().replace(/^#/, '')}</span>
+                </button>
               </div>
             )}
 
