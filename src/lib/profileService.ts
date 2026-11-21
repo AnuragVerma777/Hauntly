@@ -497,6 +497,15 @@ export async function searchByHauntlyId(
     );
   });
 
+  // If exact local match exists for username or exact hauntly_id, return immediately
+  const isExactLocal = localList.find((p) => {
+    return (
+      p.hauntly_id.toUpperCase() === candidateHauntId ||
+      p.hauntly_id.toUpperCase() === upper ||
+      (p.username || '').toLowerCase() === cleanHandle
+    );
+  });
+
   const isHauntlyFormat =
     (candidateHauntId.startsWith('HAUNT-') && candidateHauntId.length >= 8 && /^[A-Z0-9-]+$/i.test(candidateHauntId)) ||
     (upper.length >= 4 && upper.length <= 10 && /^[A-Z0-9]+$/i.test(upper));
@@ -514,7 +523,7 @@ export async function searchByHauntlyId(
     return { data: null, error: null };
   }
 
-  // 2. Query Supabase
+  // 2. Query Supabase: Try exact matches first
   try {
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
 
@@ -532,6 +541,11 @@ export async function searchByHauntlyId(
 
     if (!error && data) {
       return { data, error: null };
+    }
+
+    // Exact local match takes precedence over remote partial/fuzzy match
+    if (isExactLocal) {
+      return { data: isExactLocal, error: null };
     }
 
     // Secondary fallback: partial match on hauntly_id or username or display_name

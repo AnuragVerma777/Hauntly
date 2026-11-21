@@ -1,19 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { Profile, RelationshipStatus } from '../../types/profile';
+import type { Profile } from '../../types/profile';
 import { searchByHauntlyId, getProfile, createInviteUrl, createCompanionFromId } from '../../lib/profileService';
-import { sendFriendRequest, getRelationshipStatus } from '../../lib/friendsService';
+import { getOrCreateConversation } from '../../lib/directChatService';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { HauntlyIdBadge } from '../profile/HauntlyIdBadge';
 import {
   Search,
-  UserPlus,
-  CheckCircle2,
+  MessageSquare,
   AlertCircle,
   Loader2,
-  Clock,
   Ghost,
-  MessageSquare,
   Copy,
   Check,
   Share2,
@@ -34,17 +31,14 @@ interface AddFriendSectionProps {
 export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
   currentUserId,
   initialQuery = '',
-  onRequestSent,
 }) => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [isSearching, setIsSearching] = useState(false);
   const [searchedProfile, setSearchedProfile] = useState<Profile | null>(null);
   const [searchDone, setSearchDone] = useState(false);
-  const [relationship, setRelationship] = useState<RelationshipStatus>('none');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [isSending, setIsSending] = useState(false);
+  const [isStartingChat, setIsStartingChat] = useState(false);
   const [isLifted, setIsLifted] = useState(false);
   const [showCloudHelp, setShowCloudHelp] = useState(false);
 
@@ -65,7 +59,6 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
     if (!query) return;
 
     setErrorMsg(null);
-    setSuccessMsg(null);
     setIsSearching(true);
     setSearchDone(false);
     setSearchedProfile(null);
@@ -77,10 +70,6 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
         setErrorMsg(error.message);
       } else {
         setSearchedProfile(data);
-        if (data) {
-          const rel = await getRelationshipStatus(currentUserId, data.id);
-          setRelationship(rel);
-        }
       }
       setSearchDone(true);
     } catch (err: unknown) {
@@ -88,7 +77,7 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
     } finally {
       setIsSearching(false);
     }
-  }, [currentUserId]);
+  }, []);
 
   // Auto-search if initialQuery was supplied via URL link
   useEffect(() => {
@@ -103,26 +92,23 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
     await executeSearch(searchQuery);
   };
 
-  const handleSendRequest = async () => {
-    if (!searchedProfile) return;
-    setErrorMsg(null);
-    setSuccessMsg(null);
-    setIsSending(true);
-    setIsLifted(true);
-
+  const handleStartWhisper = async (targetProfile: Profile) => {
+    if (!currentUserId || !targetProfile) return;
+    setIsStartingChat(true);
     try {
-      const { error } = await sendFriendRequest(currentUserId, searchedProfile.id);
-      if (error) {
-        setErrorMsg(error.message);
-      } else {
-        setSuccessMsg(`Friend request successfully sent to ${searchedProfile.display_name}!`);
-        setRelationship('pending_sent');
-        if (onRequestSent) onRequestSent();
-      }
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : 'Failed to send friend request.');
+      // Create or attune conversation record directly with no friend request needed
+      await getOrCreateConversation({
+        currentUserId,
+        partnerId: targetProfile.id,
+        partnerProfile: targetProfile,
+      });
+      // Navigate straight to direct chat
+      navigate(`/chat?friendId=${targetProfile.id}`);
+    } catch (err) {
+      console.warn('Failed to start whisper:', err);
+      navigate(`/chat?friendId=${targetProfile.id}`);
     } finally {
-      setIsSending(false);
+      setIsStartingChat(false);
     }
   };
 
@@ -151,8 +137,8 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
   const handleShareInvite = async () => {
     const url = getInviteUrl();
     const shareData = {
-      title: 'Join my Coven on Hauntly',
-      text: `Join my Coven on Hauntly! Connect with me using my ID #${myProfile?.hauntly_id.toLowerCase()}:`,
+      title: 'Whisper with me on Hauntly',
+      text: `Connect and whisper with me on Hauntly! Find me using my ID #${myProfile?.hauntly_id.toLowerCase()}:`,
       url,
     };
 
@@ -188,12 +174,12 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-[#d4ff32] shadow-[0_0_10px_#d4ff32] animate-pulse" />
             <span className="text-xs font-mono font-bold tracking-wider text-emerald-400 uppercase">
-              Coven Invitation Ritual
+              Spirit Search &amp; Direct Whispers
             </span>
           </div>
         </div>
 
-        {/* Main Content: Hero Typography & Friend Summon Input */}
+        {/* Main Content: Hero Typography & Spirit Search Input */}
         <div className="max-w-xl mx-auto w-full py-8 space-y-6 flex-1">
           <div className="relative">
             {/* Flying Bat Silhouette Animation during Active state */}
@@ -213,25 +199,25 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
               {!isLifted ? (
                 <div className="space-y-3 animate-fadeIn text-center sm:text-left">
                   <h2 className="text-3xl sm:text-4xl md:text-5xl font-black font-serif uppercase tracking-tight text-white leading-none">
-                    YOU&apos;RE ON THE <br />
+                    SEARCH SPIRITS &amp; <br />
                     <span className="text-[#d4ff32] drop-shadow-[0_0_20px_rgba(212,255,50,0.4)]">
-                      HAUNT LIST
+                      START WHISPERING
                     </span>
                   </h2>
                   <p className="text-sm text-neutral-400 font-sans max-w-md leading-relaxed mx-auto sm:mx-0">
-                    One night, endless scares, and a party. Dress up and let the madness begin.
+                    Find any registered user by their exact username or unique Hauntly ID and initiate direct private whispers instantly.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3 animate-fadeIn text-center sm:text-left">
                   <h2 className="text-3xl sm:text-4xl md:text-5xl font-black font-serif uppercase tracking-tight text-white leading-none">
-                    ONE NIGHT YOU&apos;LL <br />
+                    DIRECT PRIVATE <br />
                     <span className="text-amber-400 drop-shadow-[0_0_25px_rgba(251,191,36,0.6)]">
-                      NEVER FORGET
+                      CONVERSATIONS
                     </span>
                   </h2>
                   <p className="text-sm text-neutral-300 font-sans max-w-md leading-relaxed mx-auto sm:mx-0">
-                    A little spooky, a little wild, and anything but ordinary. Bring your costume, we&apos;ll bring the chaos.
+                    No friend approval required. Locate any spirit and converse immediately through encrypted whispers.
                   </p>
                 </div>
               )}
@@ -256,7 +242,7 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
                 </button>
               </div>
               <p className="text-[11px] text-amber-300/70 leading-relaxed">
-                Your IDs are currently stored on your device. You can connect across devices immediately by typing your friend&apos;s ID below or using your <b>Invite Link</b>!
+                Direct whispers are stored securely on your device. You can connect across devices immediately by typing your friend&apos;s ID below or using your <b>Invite Link</b>!
               </p>
               {showCloudHelp && (
                 <div className="pt-2 border-t border-amber-900/40 text-[11px] text-neutral-300 space-y-1.5 font-mono">
@@ -271,12 +257,12 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
             </div>
           )}
 
-          {/* Friend Search Input Box */}
+          {/* User Search Input Box */}
           <div className="p-5 rounded-2xl bg-black/60 border border-emerald-900/40 backdrop-blur-md shadow-inner space-y-4">
             <div className="flex items-center justify-between text-xs text-neutral-400">
               <span className="font-mono flex items-center gap-1.5 text-neutral-300">
                 <Ghost className="w-3.5 h-3.5 text-[#d4ff32]" />
-                Summon Friend by Hauntly ID, UUID or @Username
+                Search by Hauntly ID, UUID or @Username
               </span>
               <span className="text-[10px] text-neutral-500 font-mono">e.g. #HAUNT-8X29K, 8X29K, @dracula</span>
             </div>
@@ -285,7 +271,7 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
               <div className="relative flex-1">
                 <input
                   type="text"
-                  placeholder="ENTER FRIEND ID, CODE OR @USERNAME"
+                  placeholder="ENTER HAUNTLY ID, CODE OR @USERNAME"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full px-4 py-3 rounded-xl bg-neutral-900/90 border border-neutral-700/60 text-white placeholder-neutral-500 font-mono text-xs tracking-wider focus:outline-none focus:border-[#d4ff32] focus:ring-1 focus:ring-[#d4ff32] transition-all"
@@ -311,7 +297,7 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
                 ) : (
                   <Search className="w-3.5 h-3.5 text-[#d4ff32]" />
                 )}
-                <span>Locate</span>
+                <span>Search</span>
               </button>
             </form>
 
@@ -320,13 +306,6 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
               <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-2">
                 <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                 <span>{errorMsg}</span>
-              </div>
-            )}
-
-            {successMsg && (
-              <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-800/60 text-emerald-300 text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>{successMsg}</span>
               </div>
             )}
 
@@ -345,17 +324,16 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
                   onClick={() => {
                     const companion = createCompanionFromId(searchQuery);
                     setSearchedProfile(companion);
-                    setRelationship('none');
                   }}
                   className="w-full py-2.5 rounded-xl bg-[#d4ff32] hover:bg-[#bbf019] text-black font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_0_15px_rgba(212,255,50,0.3)]"
                 >
                   <Ghost className="w-3.5 h-3.5" />
-                  <span>Summon &amp; Connect with #{searchQuery.trim().toUpperCase().replace(/^#/, '')}</span>
+                  <span>Summon &amp; Whisper with #{searchQuery.trim().toUpperCase().replace(/^#/, '')}</span>
                 </button>
               </div>
             )}
 
-            {/* Searched Friend Preview Card */}
+            {/* Searched Spirit Preview Card */}
             {searchDone && searchedProfile && (
               <div className="p-4 rounded-xl bg-neutral-900/90 border border-[#d4ff32]/30 space-y-3 animate-fadeIn shadow-lg">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -384,42 +362,20 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
                     </div>
                   </div>
 
-                  {/* Relationship actions: Add & Instant Message */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {relationship === 'none' && (
-                      <button
-                        type="button"
-                        onClick={handleSendRequest}
-                        disabled={isSending}
-                        className="px-3.5 py-2 rounded-xl bg-[#d4ff32] text-black font-bold text-xs flex items-center gap-1.5 hover:bg-[#bbf019] transition-all cursor-pointer shadow-[0_0_15px_rgba(212,255,50,0.4)]"
-                      >
-                        {isSending ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <UserPlus className="w-3.5 h-3.5" />
-                        )}
-                        <span>Send Request</span>
-                      </button>
-                    )}
-                    {relationship === 'friends' && (
-                      <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60">
-                        <CheckCircle2 className="w-3 h-3" /> In Coven
-                      </span>
-                    )}
-                    {relationship === 'pending_sent' && (
-                      <span className="text-[11px] font-mono text-amber-400 font-semibold flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-950/60 border border-amber-800/60">
-                        <Clock className="w-3 h-3" /> Request Sent
-                      </span>
-                    )}
-
-                    {/* Instant 1-on-1 Whisper Button */}
+                  {/* Instant 1-on-1 Whisper Button */}
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => navigate(`/chat?friendId=${searchedProfile.id}`)}
-                      className="px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.4)]"
-                      title="Open direct whisper chat with this companion"
+                      disabled={isStartingChat || searchedProfile.id === currentUserId}
+                      onClick={() => handleStartWhisper(searchedProfile)}
+                      className="px-4 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                      title={searchedProfile.id === currentUserId ? 'This is yourself' : 'Start direct whisper conversation'}
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
+                      {isStartingChat ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      )}
                       <span>Start Whisper</span>
                     </button>
                   </div>
@@ -446,7 +402,7 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
               </div>
 
               <p className="text-xs text-neutral-300/80 leading-relaxed">
-                Send your permanent link to friends on WhatsApp, Discord, or Instagram. When they open it, your profile will be ready to add instantly!
+                Send your permanent link to friends on WhatsApp, Discord, or Instagram. When they open it, your profile will be ready to whisper instantly!
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -461,54 +417,35 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
                   <button
                     type="button"
                     onClick={handleCopyMyId}
-                    className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer shrink-0 border border-neutral-700"
+                    className="p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer shrink-0"
+                    title="Copy Hauntly ID"
                   >
-                    {copiedId ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        <span className="text-emerald-400">Copied</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-3.5 h-3.5" />
-                        <span>Copy ID</span>
-                      </>
-                    )}
+                    {copiedId ? <Check className="w-3.5 h-3.5 text-[#d4ff32]" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                 </div>
 
-                {/* 2. Web Invite Link Card */}
+                {/* 2. Permanent Invite Link */}
                 <div className="p-3 rounded-xl bg-black/60 border border-emerald-950 flex items-center justify-between">
                   <div className="min-w-0 pr-2">
-                    <span className="text-[10px] font-mono text-neutral-400 block uppercase">Invite Link</span>
-                    <span className="text-xs font-mono text-neutral-300 truncate block">
+                    <span className="text-[10px] font-mono text-neutral-400 block uppercase">Direct Whisper Link</span>
+                    <span className="text-xs font-mono text-emerald-400 truncate block">
                       {getInviteUrl().replace(/^https?:\/\//, '')}
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={handleCopyLink}
-                      className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer border border-neutral-700"
-                      title="Copy link to clipboard"
+                      className="p-2 rounded-lg bg-neutral-800/80 hover:bg-neutral-700 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                      title="Copy Direct Link"
                     >
-                      {copiedLink ? (
-                        <>
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span className="text-emerald-400">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3.5 h-3.5" />
-                          <span>Copy Link</span>
-                        </>
-                      )}
+                      {copiedLink ? <Check className="w-3.5 h-3.5 text-[#d4ff32]" /> : <Copy className="w-3.5 h-3.5" />}
                     </button>
                     <button
                       type="button"
                       onClick={handleShareInvite}
-                      className="p-1.5 rounded-lg bg-[#d4ff32] hover:bg-[#bbf019] text-black transition-all cursor-pointer shadow-[0_0_10px_rgba(212,255,50,0.3)]"
-                      title="Share link across internet apps"
+                      className="p-2 rounded-lg bg-[#d4ff32] hover:bg-[#bbf019] text-black transition-colors cursor-pointer"
+                      title="Share link"
                     >
                       <Share2 className="w-3.5 h-3.5" />
                     </button>

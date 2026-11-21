@@ -261,7 +261,7 @@ export const FriendsListSection: React.FC<FriendsListSectionProps> = ({
                 <div className="flex items-center justify-between pt-3 border-t border-purple-900/30 text-[11px] text-purple-400/60 font-mono">
                   <span className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
-                    Bonded {formatDate(entry.createdAt)}
+                    Bonded {formatDate(entry.createdAt || entry.since || new Date().toISOString())}
                   </span>
 
                   <a

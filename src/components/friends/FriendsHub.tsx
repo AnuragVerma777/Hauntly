@@ -1,20 +1,14 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import type { FriendEntry, Friendship, BlockRecord } from '../../types/profile';
-import {
-  fetchAcceptedFriends,
-  fetchPendingRequests,
-  fetchBlockedUsers,
-} from '../../lib/friendsService';
-import { supabase, isSupabaseConfigured } from '../../lib/supabase';
+import type { FriendEntry, BlockRecord } from '../../types/profile';
+import { fetchBlockedUsers } from '../../lib/friendsService';
+import { listUserConversations } from '../../lib/directChatService';
 import { GothicCard } from '../ui/GothicCard';
 import { FriendsListSection } from './FriendsListSection';
 import { AddFriendSection } from './AddFriendSection';
-import { PendingRequestsSection } from './PendingRequestsSection';
 import { BlockedUsersSection } from './BlockedUsersSection';
 import {
   Users,
-  UserPlus,
-  Inbox,
+  Search,
   Ban,
   RefreshCw,
 } from 'lucide-react';
@@ -30,29 +24,30 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
   initialTab = 'friends',
   initialAddFriendQuery = '',
 }) => {
-  const [activeTab, setActiveTab] = useState<'friends' | 'add' | 'pending' | 'blocked'>(initialTab);
+  // Normalize initialTab: if 'pending' was passed, map it to 'friends'
+  const normalizedTab = initialTab === 'pending' ? 'friends' : initialTab;
+  const [activeTab, setActiveTab] = useState<'friends' | 'add' | 'blocked'>(normalizedTab);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
-  const [receivedRequests, setReceivedRequests] = useState<Friendship[]>([]);
-  const [sentRequests, setSentRequests] = useState<Friendship[]>([]);
   const [blockedUsers, setBlockedUsers] = useState<BlockRecord[]>([]);
-  const [loading, setLoading] = useState<boolean>(() => isSupabaseConfigured && Boolean(currentUserId));
+  const [loading, setLoading] = useState<boolean>(() => Boolean(currentUserId));
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const loadAllData = useCallback(async () => {
-    if (!currentUserId || !isSupabaseConfigured) {
-      return;
-    }
+    if (!currentUserId) return;
 
     try {
-      const [friendsRes, requestsRes, blockedRes] = await Promise.all([
-        fetchAcceptedFriends(currentUserId),
-        fetchPendingRequests(currentUserId),
+      const [convs, blockedRes] = await Promise.all([
+        listUserConversations(currentUserId),
         fetchBlockedUsers(currentUserId),
       ]);
 
-      setFriends(friendsRes.data || []);
-      setReceivedRequests(requestsRes.received || []);
-      setSentRequests(requestsRes.sent || []);
+      const friendEntries: FriendEntry[] = convs.map((c) => ({
+        friendshipId: c.id,
+        friend: c.partnerProfile,
+        since: c.lastMessageAt || new Date().toISOString(),
+      }));
+
+      setFriends(friendEntries);
       setBlockedUsers(blockedRes.data || []);
     } catch (err) {
       console.warn('FriendsHub load error:', err);
@@ -66,17 +61,19 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
     let isSubscribed = true;
 
     async function initialFetch() {
-      if (!currentUserId || !isSupabaseConfigured) return;
+      if (!currentUserId) return;
       try {
-        const [friendsRes, requestsRes, blockedRes] = await Promise.all([
-          fetchAcceptedFriends(currentUserId),
-          fetchPendingRequests(currentUserId),
+        const [convs, blockedRes] = await Promise.all([
+          listUserConversations(currentUserId),
           fetchBlockedUsers(currentUserId),
         ]);
         if (!isSubscribed) return;
-        setFriends(friendsRes.data || []);
-        setReceivedRequests(requestsRes.received || []);
-        setSentRequests(requestsRes.sent || []);
+        const friendEntries: FriendEntry[] = convs.map((c) => ({
+          friendshipId: c.id,
+          friend: c.partnerProfile,
+          since: c.lastMessageAt || new Date().toISOString(),
+        }));
+        setFriends(friendEntries);
         setBlockedUsers(blockedRes.data || []);
       } catch (err) {
         console.warn('FriendsHub load error:', err);
@@ -89,27 +86,24 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
 
     initialFetch();
 
-    if (!isSupabaseConfigured) return;
+    // Listen to conversation and whisper events
+    const handleConversationUpdate = () => {
+      void loadAllData();
+    };
 
-    // Realtime postgres changes listener on friendships table
-    const channel = supabase
-      .channel('hauntly-friendships-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'friendships',
-        },
-        () => {
-          loadAllData();
-        }
-      )
-      .subscribe();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('hauntly_conversations_updated', handleConversationUpdate);
+      window.addEventListener('hauntly_whisper_sent', handleConversationUpdate);
+      window.addEventListener('hauntly_storage_update', handleConversationUpdate);
+    }
 
     return () => {
       isSubscribed = false;
-      supabase.removeChannel(channel);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('hauntly_conversations_updated', handleConversationUpdate);
+        window.removeEventListener('hauntly_whisper_sent', handleConversationUpdate);
+        window.removeEventListener('hauntly_storage_update', handleConversationUpdate);
+      }
     };
   }, [currentUserId, loadAllData]);
 
@@ -117,8 +111,6 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
     setIsRefreshing(true);
     loadAllData();
   };
-
-  const pendingReceivedCount = receivedRequests.length;
 
   return (
     <GothicCard glow className="w-full space-y-6">
@@ -128,19 +120,19 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-serif font-black text-white tracking-wide flex items-center gap-2.5">
               <Users className="w-5 h-5 text-purple-400" />
-              The Coven Circle &amp; Social Realm
+              The Coven Circle &amp; Direct Whispers
             </h2>
             <button
               onClick={handleManualRefresh}
               disabled={isRefreshing}
               className="p-1.5 rounded-lg text-purple-400/60 hover:text-purple-200 hover:bg-purple-950/40 transition-colors cursor-pointer"
-              title="Refresh friendship ether"
+              title="Refresh conversations"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-purple-300' : ''}`} />
             </button>
           </div>
           <p className="text-xs text-purple-300/60">
-            Form spectral bonds, manage invocations, and summon companions via unique Hauntly IDs
+            Search spirits, summon companions via unique Hauntly IDs, and engage in direct whispers
           </p>
         </div>
 
@@ -155,7 +147,7 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
             }`}
           >
             <Users className="w-3.5 h-3.5" />
-            <span>Coven</span>
+            <span>Whispers</span>
             <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-purple-950/80 text-purple-300">
               {friends.length}
             </span>
@@ -169,25 +161,8 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
                 : 'text-purple-400/70 hover:text-purple-200 hover:bg-purple-950/30'
             }`}
           >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>Add Friend</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('pending')}
-            className={`relative flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-              activeTab === 'pending'
-                ? 'bg-gradient-to-r from-purple-900 to-indigo-950 text-white shadow-[0_0_15px_rgba(168,85,247,0.3)] border border-purple-500/50'
-                : 'text-purple-400/70 hover:text-purple-200 hover:bg-purple-950/30'
-            }`}
-          >
-            <Inbox className="w-3.5 h-3.5" />
-            <span>Requests</span>
-            {pendingReceivedCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold bg-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.8)] animate-pulse">
-                {pendingReceivedCount}
-              </span>
-            )}
+            <Search className="w-3.5 h-3.5" />
+            <span>Search Spirits</span>
           </button>
 
           <button
@@ -213,7 +188,7 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
       {loading ? (
         <div className="py-16 text-center space-y-3">
           <div className="w-10 h-10 mx-auto rounded-full border-2 border-purple-500/40 border-t-purple-400 animate-spin" />
-          <p className="text-xs font-mono text-purple-300/60">Summoning social conduits from Supabase...</p>
+          <p className="text-xs font-mono text-purple-300/60">Attuning social conduits...</p>
         </div>
       ) : (
         <div>
@@ -235,15 +210,6 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
               onRequestSent={() => {
                 loadAllData();
               }}
-            />
-          )}
-
-          {activeTab === 'pending' && (
-            <PendingRequestsSection
-              currentUserId={currentUserId}
-              receivedRequests={receivedRequests}
-              sentRequests={sentRequests}
-              onRefresh={loadAllData}
             />
           )}
 

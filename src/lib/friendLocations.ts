@@ -128,16 +128,37 @@ export async function getLiveFriendPins(currentUserId?: string): Promise<FriendP
         }
       }
 
-      // 2. Accepted friends who set their locations
+      // 2. Direct whisper contacts & companions who set their locations
       if (currentUserId) {
+        const contactPartnerIds = new Set<string>();
+
+        // Load partners from active conversations
+        const rawConvs = localStorage.getItem(`hauntly_conversations_${currentUserId}`);
+        if (rawConvs) {
+          try {
+            const parsed = JSON.parse(rawConvs);
+            if (Array.isArray(parsed)) {
+              for (const c of parsed) {
+                if (c.partnerId) contactPartnerIds.add(c.partnerId);
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        // Backward compatibility for existing local friendships
         const acceptedFriendships = friendships.filter(
           (f) =>
             f.status === 'accepted' &&
             (f.requester_id === currentUserId || f.addressee_id === currentUserId)
         );
-
         for (const f of acceptedFriendships) {
-          const friendId = f.requester_id === currentUserId ? f.addressee_id : f.requester_id;
+          const fId = f.requester_id === currentUserId ? f.addressee_id : f.requester_id;
+          if (fId) contactPartnerIds.add(fId);
+        }
+
+        for (const friendId of contactPartnerIds) {
           if (processedUserIds.has(friendId)) continue;
 
           const friendProfile = profilesMap[friendId];

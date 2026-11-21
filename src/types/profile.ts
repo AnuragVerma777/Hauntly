@@ -40,9 +40,10 @@ export interface BlockRecord {
 export interface FriendEntry {
   friendshipId: string;
   friend: Profile;
-  status: FriendshipStatus;
-  isRequester: boolean;
-  createdAt: string;
+  status?: FriendshipStatus;
+  isRequester?: boolean;
+  createdAt?: string;
+  since?: string;
 }
 
 export type RelationshipStatus =

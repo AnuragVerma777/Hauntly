@@ -458,21 +458,39 @@ export async function removeFriend(
     );
     saveLocalFriendships(next);
 
+    // Also update local conversations if applicable
+    if (typeof localStorage !== 'undefined') {
+      const convKey = `hauntly_conversations_${currentUserId}`;
+      const raw = localStorage.getItem(convKey);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.filter((c) => c.id !== friendshipId && c.partnerId !== friendshipId);
+            localStorage.setItem(convKey, JSON.stringify(updated));
+          }
+        } catch {
+          // ignore
+        }
+      }
+      window.dispatchEvent(new CustomEvent('hauntly_conversations_updated'));
+    }
+
     if (!isSupabaseConfigured) {
       return { error: null };
     }
 
-    // 2. Persist to remote Supabase friendships table
-    const { error } = await supabase
-      .from('friendships')
-      .delete()
-      .eq('id', friendshipId)
-      .or(`requester_id.eq.${currentUserId},addressee_id.eq.${currentUserId},sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
-
-    if (error) {
-      console.warn('Supabase remote removeFriend failed, local status kept:', error.message);
-      return { error: null };
+    // 2. Safely attempt delete on Supabase without throwing missing table error
+    try {
+      await supabase
+        .from('friendships')
+        .delete()
+        .eq('id', friendshipId)
+        .or(`requester_id.eq.${currentUserId},addressee_id.eq.${currentUserId},sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`);
+    } catch {
+      // friendships table might be absent in Direct Messaging mode
     }
+
     return { error: null };
   } catch (err: unknown) {
     return { error: err instanceof Error ? err : new Error('Failed to remove friend') };
@@ -491,6 +509,24 @@ export async function blockUser(
   }
 
   try {
+    // Update local conversations
+    if (typeof localStorage !== 'undefined') {
+      const convKey = `hauntly_conversations_${currentUserId}`;
+      const raw = localStorage.getItem(convKey);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const updated = parsed.filter((c) => c.partnerId !== targetUserId);
+            localStorage.setItem(convKey, JSON.stringify(updated));
+          }
+        } catch {
+          // ignore
+        }
+      }
+      window.dispatchEvent(new CustomEvent('hauntly_conversations_updated'));
+    }
+
     if (!isSupabaseConfigured) {
       const blocks = getLocalBlocks();
       if (!blocks.some((b) => b.blocker_id === currentUserId && b.blocked_id === targetUserId)) {
@@ -528,10 +564,14 @@ export async function blockUser(
       return { error: new Error(blockError.message) };
     }
 
-    await supabase
-      .from('friendships')
-      .delete()
-      .or(`and(requester_id.eq.${currentUserId},addressee_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},addressee_id.eq.${currentUserId})`);
+    try {
+      await supabase
+        .from('friendships')
+        .delete()
+        .or(`and(requester_id.eq.${currentUserId},addressee_id.eq.${targetUserId}),and(requester_id.eq.${targetUserId},addressee_id.eq.${currentUserId})`);
+    } catch {
+      // friendships table might be absent in Direct Messaging mode
+    }
 
     return { error: null };
   } catch (err: unknown) {

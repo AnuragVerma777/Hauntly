@@ -21,9 +21,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import type { FriendEntry, Profile } from '../../types/profile';
+import type { Profile, FriendEntry } from '../../types/profile';
 import type { Group, GroupMember } from '../../types/groupChat';
-import { fetchAcceptedFriends, fetchPendingRequests } from '../../lib/friendsService';
 import { ensureProfile, searchByHauntlyId, getProfile, createInviteUrl } from '../../lib/profileService';
 import { isSupabaseConfigured } from '../../lib/supabase';
 import { fetchUserGroups, fetchGroupMembers } from '../../lib/groupChatService';
@@ -33,13 +32,15 @@ import { CreateGroupModal } from './CreateGroupModal';
 import { AiHelpSidebar } from './AiHelpSidebar';
 import { MessageContextMenu } from './MessageContextMenu';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
+import type { ChatMessage } from '../../lib/whisperChatService';
 import {
-  type ChatMessage,
-  fetchDirectMessages,
-  sendDirectMessage,
-  deleteDirectMessage,
-  subscribeToDirectWhispers,
-} from '../../lib/whisperChatService';
+  listUserConversations,
+  getOrCreateConversation,
+  fetchConversationMessages,
+  sendDirectWhisper,
+  deleteDirectWhisper,
+  subscribeToDirectMessages,
+} from '../../lib/directChatService';
 
 interface GothicChatSectionProps {
   initialFriendId?: string;
@@ -134,64 +135,39 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
     }
   }, [directToast]);
 
-  // 1. Load initial user data, groups, and invited/accepted friends
+  // 1. Load initial user data, groups, and direct whisper conversations
   useEffect(() => {
     let active = true;
     const fetchAll = async () => {
       const currentId = user?.id || 'default_current_user';
-      const [pRes, fRes, gRes, reqRes] = await Promise.all([
+      const [pRes, convs, gRes] = await Promise.all([
         user ? ensureProfile(user) : Promise.resolve({ data: null, error: null }),
-        fetchAcceptedFriends(currentId),
+        listUserConversations(currentId),
         fetchUserGroups(currentId),
-        fetchPendingRequests(currentId),
       ]);
 
       if (!active) return;
       if (pRes.data) setProfile(pRes.data);
-      if (fRes.data) setFriends(fRes.data);
       if (gRes.data) setGroups(gRes.data);
 
       const items: CovenFriendItem[] = [];
       const seenIds = new Set<string>();
 
-      // 1. Accepted Coven Friends
-      if (fRes.data) {
-        for (const entry of fRes.data) {
-          if (entry.friend && !seenIds.has(entry.friend.id)) {
-            seenIds.add(entry.friend.id);
-            items.push({
-              id: entry.friend.id,
-              name: entry.friend.display_name,
-              avatar: entry.friend.avatar_url || '/avatars/avatar_vampire.jpg',
-              hauntlyId: entry.friend.hauntly_id,
-              username: entry.friend.username,
-              bio: entry.friend.bio,
-              status: 'accepted',
-              time: 'In Coven',
-              online: true,
-            });
-          }
-        }
-      }
-
-      // 2. Friends user is going to invite / has invited (pending outgoing requests)
-      if (reqRes.sent) {
-        for (const req of reqRes.sent) {
-          const target = req.addressee;
-          if (target && !seenIds.has(target.id)) {
-            seenIds.add(target.id);
-            items.push({
-              id: target.id,
-              name: target.display_name,
-              avatar: target.avatar_url || '/avatars/avatar_pumpkin_face.jpg',
-              hauntlyId: target.hauntly_id,
-              username: target.username,
-              bio: target.bio,
-              status: 'invited',
-              time: 'Invited',
-              online: true,
-            });
-          }
+      // 1. Direct Whispers & Conversations
+      for (const conv of convs) {
+        if (conv.partnerProfile && !seenIds.has(conv.partnerId)) {
+          seenIds.add(conv.partnerId);
+          items.push({
+            id: conv.partnerId,
+            name: conv.partnerProfile.display_name,
+            avatar: conv.partnerProfile.avatar_url || '/avatars/avatar_vampire.jpg',
+            hauntlyId: conv.partnerProfile.hauntly_id,
+            username: conv.partnerProfile.username,
+            bio: conv.partnerProfile.bio,
+            status: 'accepted',
+            time: conv.lastMessage ? 'Active' : 'Whisper',
+            online: true,
+          });
         }
       }
 
@@ -206,6 +182,11 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
           try {
             const { data: targetProfile } = await getProfile(urlFriendId);
             if (active && targetProfile) {
+              await getOrCreateConversation({
+                currentUserId: currentId,
+                partnerId: targetProfile.id,
+                partnerProfile: targetProfile,
+              });
               const targetItem: CovenFriendItem = {
                 id: targetProfile.id,
                 name: targetProfile.display_name,
@@ -213,7 +194,7 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
                 hauntlyId: targetProfile.hauntly_id,
                 username: targetProfile.username,
                 bio: targetProfile.bio,
-                status: 'invited',
+                status: 'accepted',
                 time: 'Active',
                 online: true,
               };
@@ -228,6 +209,22 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
       }
 
       setCovenFriends(items);
+      setFriends(
+        items.map((item) => ({
+          friendshipId: `conv_${item.id}`,
+          friend: {
+            id: item.id,
+            hauntly_id: item.hauntlyId,
+            username: item.username,
+            display_name: item.name,
+            avatar_url: item.avatar,
+            bio: item.bio,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+          since: new Date().toISOString(),
+        }))
+      );
 
       if (!urlFriendId) {
         if (items.length > 0 && !selectedFriendId) {
@@ -245,9 +242,11 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
       void fetchAll();
     };
     window.addEventListener('hauntly_storage_update', handleStorageUpdate);
+    window.addEventListener('hauntly_conversations_updated', handleStorageUpdate);
     return () => {
       active = false;
       window.removeEventListener('hauntly_storage_update', handleStorageUpdate);
+      window.removeEventListener('hauntly_conversations_updated', handleStorageUpdate);
     };
   }, [user, selectedFriendId, selectedGroupId]);
 
@@ -277,11 +276,11 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
     }
 
     let active = true;
-    void fetchDirectMessages(currentUserId, selectedFriendId).then((msgs) => {
+    void fetchConversationMessages(currentUserId, selectedFriendId).then((msgs) => {
       if (active) setDirectMessages(msgs);
     });
 
-    const unsubscribe = subscribeToDirectWhispers({
+    const unsubscribe = subscribeToDirectMessages({
       userId1: currentUserId,
       userId2: selectedFriendId,
       onNewMessage: (msg) => {
@@ -353,7 +352,13 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
     };
   }, [searchQuery, covenFriends]);
 
-  const handleStartChatWithProfile = (targetProfile: Profile) => {
+  const handleStartChatWithProfile = async (targetProfile: Profile) => {
+    const currentUserId = user?.id || 'default_current_user';
+    await getOrCreateConversation({
+      currentUserId,
+      partnerId: targetProfile.id,
+      partnerProfile: targetProfile,
+    });
     setCovenFriends((prev) => {
       if (prev.some((f) => f.id === targetProfile.id)) return prev;
       return [
@@ -364,8 +369,8 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
           hauntlyId: targetProfile.hauntly_id,
           username: targetProfile.username,
           bio: targetProfile.bio,
-          status: 'invited',
-          time: 'Just now',
+          status: 'accepted',
+          time: 'Active',
           online: true,
         },
         ...prev,
@@ -452,11 +457,12 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
     setDirectInputText('');
 
     try {
-      const sent = await sendDirectMessage({
+      const sent = await sendDirectWhisper({
         senderId: currentUserId,
         senderName: currentUserName,
         receiverId: selectedFriendId,
         text,
+        partnerProfile: activeFriend || undefined,
       });
 
       setDirectMessages((prev) => {
@@ -479,11 +485,12 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
           const randomReply = replies[Math.floor(Math.random() * replies.length)];
           const replySenderName = activeFriend?.display_name || 'Companion Spirit';
 
-          const replyMsg = await sendDirectMessage({
+          const replyMsg = await sendDirectWhisper({
             senderId: selectedFriendId,
             senderName: replySenderName,
             receiverId: currentUserId,
             text: randomReply,
+            partnerProfile: profile || undefined,
           });
 
           setDirectMessages((prev) => {
@@ -721,11 +728,11 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
             </div>
           )}
 
-          {/* ── 2. INVITED FRIENDS & COVEN ── */}
+          {/* ── 2. DIRECT WHISPERS & SPIRITS ── */}
           <div className="space-y-1">
             <div className="flex items-center justify-between px-2 pt-1 pb-1">
               <span className="text-[11px] font-semibold text-purple-300/70 tracking-wider">
-                Invited Friends
+                Direct Whispers
               </span>
               <span className="text-[10px] font-mono text-purple-400/60">
                 {filteredCovenFriends.length}
@@ -765,15 +772,9 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-0.5">
                         <span className="text-xs font-semibold text-white truncate">{friend.name}</span>
-                        {friend.status === 'invited' ? (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1 shrink-0">
-                            <Mail className="w-2.5 h-2.5" /> Invited
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0">
-                            🕯️ In Coven
-                          </span>
-                        )}
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 flex items-center gap-1 shrink-0">
+                          <MessageSquare className="w-2.5 h-2.5 text-[#d4ff32]" /> Whisper
+                        </span>
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] text-purple-300/60 font-mono truncate">
@@ -793,9 +794,9 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
                   <Ghost className="w-5 h-5 text-[#d4ff32]" />
                 </div>
                 <div>
-                  <p className="text-xs text-white font-semibold">No friends invited yet</p>
+                  <p className="text-xs text-white font-semibold">No direct whispers yet</p>
                   <p className="text-[10px] text-purple-400/60 leading-relaxed mt-0.5">
-                    Only friends you summon or invite to your coven will appear here.
+                    Search spirits by username or Hauntly ID to begin private whispers.
                   </p>
                 </div>
                 {onNavigateToFriends && (
@@ -804,8 +805,8 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
                     onClick={onNavigateToFriends}
                     className="px-3 py-1.5 rounded-xl bg-[#d4ff32] hover:bg-[#bbf019] text-black text-[11px] font-bold transition-all shadow-sm cursor-pointer inline-flex items-center gap-1 mt-1"
                   >
-                    <UserPlus className="w-3 h-3" />
-                    <span>Summon Friends</span>
+                    <Search className="w-3 h-3" />
+                    <span>Search Spirits</span>
                   </button>
                 )}
               </div>
@@ -1285,7 +1286,7 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
           onConfirm={async () => {
             const currentUserId = user?.id || 'default_current_user';
             if (selectedFriendId) {
-              await deleteDirectMessage({
+              await deleteDirectWhisper({
                 messageId: directDeleteTarget.messageId,
                 userId1: currentUserId,
                 userId2: selectedFriendId,
