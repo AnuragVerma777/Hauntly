@@ -123,10 +123,12 @@ export function generateClientHauntlyId(): string {
  * Retrieves a user profile by user UID
  */
 export async function getProfile(userId: string): Promise<{ data: Profile | null; error: Error | null }> {
+  // Always inspect local cache first so that even if remote database lacks tables or network fails, profile is available
+  const localProfiles = getLocalProfiles();
+  const cached = localProfiles[userId] || null;
+
   if (!isSupabaseConfigured) {
-    const profiles = getLocalProfiles();
-    const found = profiles[userId] || null;
-    return { data: found, error: null };
+    return { data: cached, error: null };
   }
 
   try {
@@ -137,31 +139,51 @@ export async function getProfile(userId: string): Promise<{ data: Profile | null
       .maybeSingle();
 
     if (error) {
-      // Fallback query if columns don't exist in remote table
+      // Fallback query if optional columns don't exist in remote table
       const fallback = await supabase
         .from('profiles')
         .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at, updated_at')
         .eq('id', userId)
         .maybeSingle();
       if (fallback.data) {
+        localProfiles[userId] = fallback.data;
+        saveLocalProfiles(localProfiles);
         return { data: fallback.data, error: null };
+      }
+      // If remote table is missing (PGRST205 / 404), seamlessly return local cached profile if present
+      if (cached) {
+        return { data: cached, error: null };
       }
       return { data: null, error: new Error(error.message) };
     }
-    return { data, error: null };
+    if (data) {
+      localProfiles[userId] = data;
+      saveLocalProfiles(localProfiles);
+      return { data, error: null };
+    }
+    return { data: cached, error: null };
   } catch (err: unknown) {
+    if (cached) {
+      return { data: cached, error: null };
+    }
     return { data: null, error: err instanceof Error ? err : new Error('Failed to retrieve profile') };
   }
 }
 
 /**
  * Guarantees a profile exists for an authenticated user.
+ * NEVER returns data: null for an authenticated user.
  */
-export async function ensureProfile(user: User): Promise<{ data: Profile | null; error: Error | null }> {
+export async function ensureProfile(user: User): Promise<{ data: Profile; error: Error | null }> {
   try {
     const existing = await getProfile(user.id);
     if (existing.data) {
-      return existing;
+      return { data: existing.data, error: null };
+    }
+
+    const localProfiles = getLocalProfiles();
+    if (localProfiles[user.id]) {
+      return { data: localProfiles[user.id], error: null };
     }
 
     // Determine initial fields from auth metadata
@@ -185,44 +207,65 @@ export async function ensureProfile(user: User): Promise<{ data: Profile | null;
       user.user_metadata?.picture ||
       '/avatars/avatar_vampire.jpg';
 
+    const fallbackProfile: Profile = {
+      id: user.id,
+      hauntly_id: hauntlyId,
+      username: initialUsername,
+      display_name: displayName,
+      avatar_url: avatarUrl,
+      bio: 'Wandering the nocturnal corridors of Hauntly.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Save locally immediately to guarantee availability across all components
+    localProfiles[user.id] = fallbackProfile;
+    saveLocalProfiles(localProfiles);
+
     if (!isSupabaseConfigured) {
-      const newProfile: Profile = {
-        id: user.id,
-        hauntly_id: hauntlyId,
-        username: initialUsername,
-        display_name: displayName,
-        avatar_url: avatarUrl,
-        bio: 'Wandering the nocturnal corridors of Hauntly.',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      const profiles = getLocalProfiles();
-      profiles[user.id] = newProfile;
-      saveLocalProfiles(profiles);
-      return { data: newProfile, error: null };
+      return { data: fallbackProfile, error: null };
     }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .insert({
-        id: user.id,
-        hauntly_id: hauntlyId,
-        username: initialUsername,
-        display_name: displayName,
-        avatar_url: avatarUrl,
-      })
-      .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at, updated_at')
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          hauntly_id: hauntlyId,
+          username: initialUsername,
+          display_name: displayName,
+          avatar_url: avatarUrl,
+        })
+        .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at, updated_at')
+        .single();
 
-    if (error) {
-      const retry = await getProfile(user.id);
-      if (retry.data) return retry;
-      return { data: null, error: new Error(error.message) };
+      if (!error && data) {
+        localProfiles[user.id] = data;
+        saveLocalProfiles(localProfiles);
+        return { data, error: null };
+      }
+    } catch (insertErr) {
+      console.warn('Supabase remote profile insert skipped/failed:', insertErr);
     }
 
-    return { data, error: null };
+    // Return resilient local profile if remote insert failed or table does not exist
+    return { data: fallbackProfile, error: null };
   } catch (err: unknown) {
-    return { data: null, error: err instanceof Error ? err : new Error('Failed to ensure profile') };
+    console.warn('ensureProfile exception caught, falling back to local profile:', err);
+    const localProfiles = getLocalProfiles();
+    const fallbackProfile: Profile = localProfiles[user.id] || {
+      id: user.id,
+      hauntly_id: generateClientHauntlyId(),
+      username: (user.email?.split('@')[0] || 'phantom').slice(0, 20),
+      display_name: user.user_metadata?.display_name || user.email?.split('@')[0] || 'Phantom',
+      avatar_url: '/avatars/avatar_vampire.jpg',
+      bio: 'Wandering the nocturnal corridors of Hauntly.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    localProfiles[user.id] = fallbackProfile;
+    saveLocalProfiles(localProfiles);
+    return { data: fallbackProfile, error: null };
   }
 }
 
@@ -272,36 +315,57 @@ export async function updateProfile(
       cleanUpdates.username = sanitizedUsername;
     }
 
+    // Guarantee local profile update so edits persist on client regardless of remote state
+    const profiles = getLocalProfiles();
+    const current = profiles[userId] || {
+      id: userId,
+      hauntly_id: generateClientHauntlyId(),
+      username: cleanUpdates.username as string || 'phantom',
+      display_name: cleanUpdates.display_name as string || 'Phantom',
+      avatar_url: cleanUpdates.avatar_url as string || '/avatars/avatar_vampire.jpg',
+      bio: 'Wandering the nocturnal corridors of Hauntly.',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    const updatedLocally: Profile = {
+      ...current,
+      ...(cleanUpdates as any),
+      updated_at: new Date().toISOString(),
+    };
+    profiles[userId] = updatedLocally;
+    saveLocalProfiles(profiles);
+
     if (!isSupabaseConfigured) {
-      const profiles = getLocalProfiles();
-      const current = profiles[userId];
-      if (!current) {
-        return { data: null, error: new Error('Profile not found') };
-      }
-      const updated: Profile = {
-        ...current,
-        ...(cleanUpdates as any),
-      };
-      profiles[userId] = updated;
-      saveLocalProfiles(profiles);
-      return { data: updated, error: null };
+      return { data: updatedLocally, error: null };
     }
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update(cleanUpdates)
-      .eq('id', userId)
-      .select('id, hauntly_id, username, display_name, avatar_url, bio, location_name, latitude, longitude, created_at, updated_at')
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update(cleanUpdates)
+        .eq('id', userId)
+        .select('id, hauntly_id, username, display_name, avatar_url, bio, location_name, latitude, longitude, created_at, updated_at')
+        .single();
 
-    if (error) {
-      if (error.code === '23505') {
-        return { data: null, error: new Error('This spirit moniker (@username) is already claimed in the realm.') };
+      if (error) {
+        if (error.code === '23505') {
+          return { data: null, error: new Error('This spirit moniker (@username) is already claimed in the realm.') };
+        }
+        console.warn('Supabase remote profile update failed, using local profile:', error.message);
+        return { data: updatedLocally, error: null };
       }
-      return { data: null, error: new Error(error.message) };
+
+      if (data) {
+        profiles[userId] = data;
+        saveLocalProfiles(profiles);
+        return { data, error: null };
+      }
+    } catch (remoteErr) {
+      console.warn('Supabase remote profile update exception, using local profile:', remoteErr);
+      return { data: updatedLocally, error: null };
     }
 
-    return { data, error: null };
+    return { data: updatedLocally, error: null };
   } catch (err: unknown) {
     return { data: null, error: err instanceof Error ? err : new Error('Failed to update profile') };
   }

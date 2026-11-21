@@ -480,7 +480,35 @@ export async function fetchAcceptedFriends(
       .order('created_at', { ascending: false });
 
     if (error) {
-      return { data: [], error: new Error(error.message) };
+      console.warn('Remote friendships query failed, falling back to local:', error.message);
+      const list = getLocalFriendships();
+      const accepted = list.filter(
+        (f) =>
+          f.status === 'accepted' &&
+          (f.requester_id === currentUserId ||
+            f.addressee_id === currentUserId ||
+            f.requester_id === 'default_current_user')
+      );
+      const entries: FriendEntry[] = [];
+      for (const row of accepted) {
+        const isRequester = row.requester_id === currentUserId || row.requester_id === 'default_current_user';
+        const friendId = isRequester ? row.addressee_id : row.requester_id;
+        let friend = isRequester ? row.addressee : row.requester;
+        if (!friend) {
+          const fetched = await getProfile(friendId);
+          if (fetched.data) friend = fetched.data;
+        }
+        if (friend) {
+          entries.push({
+            friendshipId: row.id,
+            friend,
+            status: 'accepted',
+            isRequester,
+            createdAt: row.created_at,
+          });
+        }
+      }
+      return { data: entries, error: null };
     }
 
     const entries: FriendEntry[] = (data || []).map((row: any) => {
@@ -570,11 +598,29 @@ export async function fetchPendingRequests(
         .order('created_at', { ascending: false }),
     ]);
 
-    if (receivedRes.error) {
-      return { received: [], sent: [], error: new Error(receivedRes.error.message) };
-    }
-    if (sentRes.error) {
-      return { received: [], sent: [], error: new Error(sentRes.error.message) };
+    if (receivedRes.error || sentRes.error) {
+      console.warn('Remote pending requests query failed, falling back to local');
+      const list = getLocalFriendships();
+      const received = list.filter((f) => f.status === 'pending' && f.addressee_id === currentUserId);
+      const sent = list.filter(
+        (f) =>
+          f.status === 'pending' &&
+          (f.requester_id === currentUserId || f.requester_id === 'default_current_user')
+      );
+
+      for (const r of received) {
+        if (!r.requester) {
+          const p = await getProfile(r.requester_id);
+          if (p.data) r.requester = p.data;
+        }
+      }
+      for (const s of sent) {
+        if (!s.addressee) {
+          const p = await getProfile(s.addressee_id);
+          if (p.data) s.addressee = p.data;
+        }
+      }
+      return { received, sent, error: null };
     }
 
     return {
@@ -623,7 +669,16 @@ export async function fetchBlockedUsers(
       .order('created_at', { ascending: false });
 
     if (error) {
-      return { data: [], error: new Error(error.message) };
+      console.warn('Remote blocks query failed, falling back to local:', error.message);
+      const blocks = getLocalBlocks();
+      const myBlocks = blocks.filter((b) => b.blocker_id === currentUserId);
+      for (const b of myBlocks) {
+        if (!b.blocked_profile) {
+          const p = await getProfile(b.blocked_id);
+          if (p.data) b.blocked_profile = p.data;
+        }
+      }
+      return { data: myBlocks, error: null };
     }
 
     return { data: (data as any[]) || [], error: null };
