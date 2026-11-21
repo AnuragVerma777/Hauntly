@@ -78,11 +78,15 @@ export const ProfilePage: React.FC<{
     | 'chats'
     | 'explore'
     | null;
+  const addFriendParam = searchParams.get('addFriend');
+  const friendIdParam = searchParams.get('friendId');
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState<'settings' | 'friends' | 'chats' | 'explore'>(
-    defaultTab || tabParam || 'settings'
-  );
+  const [activeTab, setActiveTab] = useState<'settings' | 'friends' | 'chats' | 'explore'>(() => {
+    if (addFriendParam) return 'friends';
+    if (friendIdParam) return 'chats';
+    return defaultTab || tabParam || 'settings';
+  });
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -784,13 +788,20 @@ export const ProfilePage: React.FC<{
                 <span>My Profile</span>
               </button>
             </div>
-            <FriendsHub currentUserId={user.id} />
+            <FriendsHub
+              currentUserId={user.id}
+              initialTab={addFriendParam ? 'add' : 'friends'}
+              initialAddFriendQuery={addFriendParam || ''}
+            />
           </div>
         )}
 
         {/* ═══ TAB 3: CHATS (Connected to real friends) ═══ */}
         {activeTab === 'chats' && (
-          <GothicChatSection onNavigateToFriends={() => setActiveTab('friends')} />
+          <GothicChatSection
+            initialFriendId={friendIdParam || undefined}
+            onNavigateToFriends={() => setActiveTab('friends')}
+          />
         )}
 
         {/* ═══ TAB 4: EXPLORE ═══ */}

@@ -15,6 +15,7 @@
     "test:context-menu": "tsx scripts/test-message-context-menu.ts",
     "test:gemini": "tsx scripts/test-gemini-ai.ts",
     "test:two-user": "tsx scripts/test-two-user-chat.ts",
+    "test:friend-links": "tsx scripts/test-friend-search-and-links.ts",
     "preview": "vite preview"
   },
   "dependencies": {

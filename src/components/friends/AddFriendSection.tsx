@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { Profile, RelationshipStatus } from '../../types/profile';
-import { searchByHauntlyId } from '../../lib/profileService';
+import { searchByHauntlyId, getProfile } from '../../lib/profileService';
 import { sendFriendRequest, getRelationshipStatus } from '../../lib/friendsService';
 import { HauntlyIdBadge } from '../profile/HauntlyIdBadge';
 import {
@@ -11,10 +12,16 @@ import {
   Loader2,
   Clock,
   Ghost,
+  MessageSquare,
+  Copy,
+  Check,
+  Share2,
+  Sparkles,
 } from 'lucide-react';
 
 interface AddFriendSectionProps {
   currentUserId: string;
+  initialQuery?: string;
   friendCount?: number;
   onNavigateToFriends?: () => void;
   onRequestSent?: () => void;
@@ -22,9 +29,11 @@ interface AddFriendSectionProps {
 
 export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
   currentUserId,
+  initialQuery = '',
   onRequestSent,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const navigate = useNavigate();
+  const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [isSearching, setIsSearching] = useState(false);
   const [searchedProfile, setSearchedProfile] = useState<Profile | null>(null);
   const [searchDone, setSearchDone] = useState(false);
@@ -34,9 +43,20 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
   const [isSending, setIsSending] = useState(false);
   const [isLifted, setIsLifted] = useState(false);
 
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const query = searchQuery.trim().toUpperCase();
+  // Current user's own profile for sharing
+  const [myProfile, setMyProfile] = useState<Profile | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    getProfile(currentUserId).then(({ data }) => {
+      if (data) setMyProfile(data);
+    });
+  }, [currentUserId]);
+
+  const executeSearch = useCallback(async (rawQuery: string) => {
+    const query = rawQuery.trim();
     if (!query) return;
 
     setErrorMsg(null);
@@ -44,8 +64,6 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
     setIsSearching(true);
     setSearchDone(false);
     setSearchedProfile(null);
-
-    // Trigger pumpkin lift on search
     setIsLifted(true);
 
     try {
@@ -65,6 +83,19 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
     } finally {
       setIsSearching(false);
     }
+  }, [currentUserId]);
+
+  // Auto-search if initialQuery was supplied via URL link
+  useEffect(() => {
+    if (initialQuery && initialQuery.trim()) {
+      setSearchQuery(initialQuery.trim());
+      executeSearch(initialQuery.trim());
+    }
+  }, [initialQuery, executeSearch]);
+
+  const handleSearch = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    await executeSearch(searchQuery);
   };
 
   const handleSendRequest = async () => {
@@ -72,8 +103,6 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
     setErrorMsg(null);
     setSuccessMsg(null);
     setIsSending(true);
-
-    // Ensure pumpkin is held aloft in celebration
     setIsLifted(true);
 
     try {
@@ -90,6 +119,45 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
     } finally {
       setIsSending(false);
     }
+  };
+
+  const getInviteUrl = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://hauntly-eight.vercel.app';
+    const hauntId = myProfile?.hauntly_id || '';
+    return `${origin}/profile?addFriend=${encodeURIComponent(hauntId)}`;
+  };
+
+  const handleCopyLink = () => {
+    const url = getInviteUrl();
+    navigator.clipboard.writeText(url);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2200);
+  };
+
+  const handleCopyMyId = () => {
+    if (!myProfile) return;
+    navigator.clipboard.writeText(myProfile.hauntly_id);
+    setCopiedId(true);
+    setTimeout(() => setCopiedId(false), 2200);
+  };
+
+  const handleShareInvite = async () => {
+    const url = getInviteUrl();
+    const shareData = {
+      title: 'Join my Coven on Hauntly',
+      text: `Join my Coven on Hauntly! Connect with me using my ID #${myProfile?.hauntly_id.toLowerCase()}:`,
+      url,
+    };
+
+    if (typeof navigator !== 'undefined' && 'share' in navigator) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch {
+        // Fallback to clipboard
+      }
+    }
+    handleCopyLink();
   };
 
   return (
@@ -168,25 +236,25 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
             <div className="flex items-center justify-between text-xs text-neutral-400">
               <span className="font-mono flex items-center gap-1.5 text-neutral-300">
                 <Ghost className="w-3.5 h-3.5 text-[#d4ff32]" />
-                Summon Friend by Hauntly ID
+                Summon Friend by Hauntly ID, UUID or @Username
               </span>
-              <span className="text-[10px] text-neutral-500 font-mono">e.g. HAUNT-8X29K</span>
+              <span className="text-[10px] text-neutral-500 font-mono">e.g. #HAUNT-8X29K, 8X29K, @dracula</span>
             </div>
 
             <form onSubmit={handleSearch} className="flex items-center gap-2">
               <div className="relative flex-1">
                 <input
                   type="text"
-                  placeholder="ENTER HAUNTLY ID"
+                  placeholder="ENTER FRIEND ID, CODE OR @USERNAME"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value.toUpperCase())}
-                  className="w-full px-4 py-3 rounded-xl bg-neutral-900/90 border border-neutral-700/60 text-white placeholder-neutral-500 font-mono text-xs uppercase tracking-wider focus:outline-none focus:border-[#d4ff32] focus:ring-1 focus:ring-[#d4ff32] transition-all"
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-neutral-900/90 border border-neutral-700/60 text-white placeholder-neutral-500 font-mono text-xs tracking-wider focus:outline-none focus:border-[#d4ff32] focus:ring-1 focus:ring-[#d4ff32] transition-all"
                 />
                 {searchQuery && (
                   <button
                     type="button"
                     onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white text-xs"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white text-xs cursor-pointer"
                   >
                     ✕
                   </button>
@@ -222,10 +290,23 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
               </div>
             )}
 
+            {/* No match found message with helpful tips */}
+            {searchDone && !searchedProfile && !isSearching && !errorMsg && (
+              <div className="p-4 rounded-xl bg-neutral-900/90 border border-amber-500/30 text-xs space-y-1.5 animate-fadeIn">
+                <div className="flex items-center gap-2 font-bold text-amber-300">
+                  <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>No spirit found matching &quot;{searchQuery}&quot;</span>
+                </div>
+                <p className="text-[11px] text-neutral-400 leading-relaxed">
+                  Make sure you have their exact Hauntly ID (e.g. <span className="font-mono text-[#d4ff32]">#HAUNT-8X29K</span> or simply <span className="font-mono text-[#d4ff32]">8X29K</span>), their exact @username, or send them your direct invite link below!
+                </p>
+              </div>
+            )}
+
             {/* Searched Friend Preview Card */}
             {searchDone && searchedProfile && (
               <div className="p-4 rounded-xl bg-neutral-900/90 border border-[#d4ff32]/30 space-y-3 animate-fadeIn shadow-lg">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     {searchedProfile.avatar_url ? (
                       <img
@@ -251,10 +332,11 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
                     </div>
                   </div>
 
-                  {/* Relationship action */}
-                  <div>
+                  {/* Relationship actions: Add & Instant Message */}
+                  <div className="flex items-center gap-2 flex-wrap">
                     {relationship === 'none' && (
                       <button
+                        type="button"
                         onClick={handleSendRequest}
                         disabled={isSending}
                         className="px-3.5 py-2 rounded-xl bg-[#d4ff32] text-black font-bold text-xs flex items-center gap-1.5 hover:bg-[#bbf019] transition-all cursor-pointer shadow-[0_0_15px_rgba(212,255,50,0.4)]"
@@ -268,20 +350,121 @@ export const AddFriendSection: React.FC<AddFriendSectionProps> = ({
                       </button>
                     )}
                     {relationship === 'friends' && (
-                      <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center gap-1">
+                      <span className="text-[11px] font-mono text-emerald-400 font-semibold flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-800/60">
                         <CheckCircle2 className="w-3 h-3" /> In Coven
                       </span>
                     )}
                     {relationship === 'pending_sent' && (
-                      <span className="text-[11px] font-mono text-amber-400 font-semibold flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> Dispatched
+                      <span className="text-[11px] font-mono text-amber-400 font-semibold flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-950/60 border border-amber-800/60">
+                        <Clock className="w-3 h-3" /> Request Sent
                       </span>
                     )}
+
+                    {/* Instant 1-on-1 Whisper Button */}
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/chat?friendId=${searchedProfile.id}`)}
+                      className="px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-[0_0_15px_rgba(168,85,247,0.4)]"
+                      title="Open direct whisper chat with this companion"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Start Whisper</span>
+                    </button>
                   </div>
                 </div>
               </div>
             )}
           </div>
+
+          {/* ══════════════════════════════════════════════════════════════════
+              INTERNET ACCESS: YOUR PERMANENT INVITE LINK & HAUNTLY ID
+          ══════════════════════════════════════════════════════════════════ */}
+          {myProfile && (
+            <div className="p-5 rounded-2xl bg-[#08120b]/90 border border-emerald-900/50 backdrop-blur-md shadow-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#d4ff32]" />
+                  <span className="text-xs font-bold text-white tracking-wide">
+                    Share Your Link Across The Internet
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono text-emerald-400/80 bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800/50">
+                  Instant Web Connect
+                </span>
+              </div>
+
+              <p className="text-xs text-neutral-300/80 leading-relaxed">
+                Send your permanent link to friends on WhatsApp, Discord, or Instagram. When they open it, your profile will be ready to add instantly!
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* 1. Permanent ID Card */}
+                <div className="p-3 rounded-xl bg-black/60 border border-emerald-950 flex items-center justify-between">
+                  <div className="min-w-0 pr-2">
+                    <span className="text-[10px] font-mono text-neutral-400 block uppercase">Your Hauntly ID</span>
+                    <span className="text-xs font-mono font-bold text-[#d4ff32] truncate block">
+                      #{myProfile.hauntly_id.toLowerCase()}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyMyId}
+                    className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer shrink-0 border border-neutral-700"
+                  >
+                    {copiedId ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span className="text-emerald-400">Copied</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy ID</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* 2. Web Invite Link Card */}
+                <div className="p-3 rounded-xl bg-black/60 border border-emerald-950 flex items-center justify-between">
+                  <div className="min-w-0 pr-2">
+                    <span className="text-[10px] font-mono text-neutral-400 block uppercase">Invite Link</span>
+                    <span className="text-xs font-mono text-neutral-300 truncate block">
+                      {getInviteUrl().replace(/^https?:\/\//, '')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCopyLink}
+                      className="px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer border border-neutral-700"
+                      title="Copy link to clipboard"
+                    >
+                      {copiedLink ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-emerald-400">Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Link</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleShareInvite}
+                      className="p-1.5 rounded-lg bg-[#d4ff32] hover:bg-[#bbf019] text-black transition-all cursor-pointer shadow-[0_0_10px_rgba(212,255,50,0.3)]"
+                      title="Share link across internet apps"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

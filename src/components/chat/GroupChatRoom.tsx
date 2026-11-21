@@ -717,7 +717,9 @@ export const GroupChatRoom: React.FC<GroupChatRoomProps> = ({
           </div>
         ) : (
           messages.map((msg, index) => {
-            const isSelf = msg.sender_id === currentUser.id;
+            const isSelf = Boolean(
+              currentUser?.id && msg.sender_id && msg.sender_id === currentUser.id
+            );
             const prevMsg = messages[index - 1];
             const showDateHeader =
               !prevMsg ||

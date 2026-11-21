@@ -300,38 +300,92 @@ export async function updateProfile(
 }
 
 /**
- * Search user profile by Hauntly ID (e.g. HAUNT-8X29K).
+ * Search user profile by Hauntly ID (e.g. HAUNT-8X29K, #8X29K, 8X29K),
+ * User ID (UUID), or username/display name across the internet.
  * Strict projection to guarantee NO EMAIL is ever exposed.
  */
 export async function searchByHauntlyId(
   hauntlyId: string
 ): Promise<{ data: Profile | null; error: Error | null }> {
-  const cleanId = hauntlyId.trim().toUpperCase();
-  if (!cleanId) {
+  const raw = hauntlyId.trim();
+  if (!raw) {
     return { data: null, error: null };
   }
 
-  if (!isSupabaseConfigured) {
-    const profiles = getLocalProfiles();
-    const found = Object.values(profiles).find(
-      (p) => p.hauntly_id.toUpperCase() === cleanId || p.hauntly_id.toUpperCase().replace('HAUNT-', '') === cleanId.replace('HAUNT-', '')
+  // Strip leading hashtag, @-symbol, and extra spaces
+  const clean = raw.replace(/^[#@]/, '').trim();
+  const upper = clean.toUpperCase();
+  const candidateHauntId = upper.startsWith('HAUNT-') ? upper : `HAUNT-${upper}`;
+  const cleanHandle = clean.toLowerCase();
+
+  // 1. Check local profiles (seeded + cached)
+  const localProfiles = getLocalProfiles();
+  const localList = Object.values(localProfiles);
+  const localFound = localList.find((p) => {
+    const pHaunt = p.hauntly_id.toUpperCase();
+    const pCore = pHaunt.replace('HAUNT-', '');
+    const pId = p.id.toLowerCase();
+    const pUser = (p.username || '').toLowerCase();
+    const pName = (p.display_name || '').toLowerCase();
+
+    return (
+      pHaunt === upper ||
+      pHaunt === candidateHauntId ||
+      pCore === upper ||
+      pCore === clean.toUpperCase() ||
+      pId === clean.toLowerCase() ||
+      pUser === cleanHandle ||
+      pName === cleanHandle
     );
-    return { data: found || null, error: null };
+  });
+
+  if (!isSupabaseConfigured) {
+    return { data: localFound || null, error: null };
   }
 
+  // 2. Query Supabase
   try {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean);
+
+    let orClause = `hauntly_id.ilike.${candidateHauntId},hauntly_id.ilike.${upper},username.ilike.${cleanHandle}`;
+    if (isUuid) {
+      orClause += `,id.eq.${clean}`;
+    }
+
     const { data, error } = await supabase
       .from('profiles')
       .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at')
-      .ilike('hauntly_id', cleanId)
+      .or(orClause)
+      .limit(1)
       .maybeSingle();
 
-    if (error) {
-      return { data: null, error: new Error(error.message) };
+    if (!error && data) {
+      return { data, error: null };
     }
 
-    return { data, error: null };
+    // Secondary fallback: partial match on hauntly_id or username or display_name
+    const { data: partialData } = await supabase
+      .from('profiles')
+      .select('id, hauntly_id, username, display_name, avatar_url, bio, created_at')
+      .or(`hauntly_id.ilike.%${clean}%,username.ilike.%${cleanHandle}%,display_name.ilike.%${clean}%`)
+      .limit(1)
+      .maybeSingle();
+
+    if (partialData) {
+      return { data: partialData, error: null };
+    }
+
+    // If not found in remote Supabase, fall back to local/seed companions (e.g. Vlad, Jack)
+    if (localFound) {
+      return { data: localFound, error: null };
+    }
+
+    return { data: null, error: null };
   } catch (err: unknown) {
+    // If Supabase throws network error, check localFound
+    if (localFound) {
+      return { data: localFound, error: null };
+    }
     return { data: null, error: err instanceof Error ? err : new Error('Search failed') };
   }
 }

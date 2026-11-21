@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { FriendEntry } from '../../types/profile';
 import { removeFriend, blockUser } from '../../lib/friendsService';
 import { GothicButton } from '../ui/GothicButton';
@@ -32,6 +33,7 @@ export const FriendsListSection: React.FC<FriendsListSectionProps> = ({
   onRefresh,
   onNavigateToAddFriend,
 }) => {
+  const navigate = useNavigate();
   const [filterQuery, setFilterQuery] = useState('');
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -195,19 +197,30 @@ export const FriendsListSection: React.FC<FriendsListSectionProps> = ({
                     </div>
                   </div>
 
-                  {/* Context Options Dropdown Menu */}
-                  <div className="relative">
+                  {/* Quick Message & Context Options */}
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setActiveMenuId(isMenuOpen ? null : entry.friendshipId)}
-                      className="w-8 h-8 rounded-lg bg-purple-950/40 hover:bg-purple-900/60 text-purple-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-                      title="Spectral options"
+                      onClick={() => navigate(`/chat?friendId=${friend.id}`)}
+                      className="px-3 py-1.5 rounded-xl bg-purple-700/60 hover:bg-purple-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer border border-purple-500/40 shadow-[0_0_12px_rgba(168,85,247,0.3)]"
+                      title={`Whisper to ${friend.display_name}`}
                     >
-                      <MoreVertical className="w-4 h-4" />
+                      <MessageSquare className="w-3.5 h-3.5 text-[#d4ff32]" />
+                      <span className="hidden sm:inline">Message</span>
                     </button>
 
-                    {isMenuOpen && (
-                      <div className="absolute right-0 top-10 w-44 rounded-xl bg-[#140b24] border border-purple-800/60 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.8)] z-20 space-y-1 animate-fadeIn">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setActiveMenuId(isMenuOpen ? null : entry.friendshipId)}
+                        className="w-8 h-8 rounded-lg bg-purple-950/40 hover:bg-purple-900/60 text-purple-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                        title="Spectral options"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+
+                      {isMenuOpen && (
+                        <div className="absolute right-0 top-10 w-44 rounded-xl bg-[#140b24] border border-purple-800/60 p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.8)] z-20 space-y-1 animate-fadeIn">
                         <button
                           type="button"
                           onClick={() => {
@@ -235,6 +248,7 @@ export const FriendsListSection: React.FC<FriendsListSectionProps> = ({
                     )}
                   </div>
                 </div>
+              </div>
 
                 {/* Bio / Quote if exists */}
                 {friend.bio && (

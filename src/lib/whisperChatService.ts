@@ -5,6 +5,7 @@ export interface ChatMessage {
   id: string;
   senderId: string;
   senderName: string;
+  receiverId?: string;
   text: string;
   time: string;
   isSelf?: boolean;
@@ -71,6 +72,7 @@ export async function sendDirectMessage(params: {
     id: `whisper_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     senderId,
     senderName,
+    receiverId,
     text: text.trim(),
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
   };

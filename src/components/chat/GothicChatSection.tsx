@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Search,
   UserPlus,
@@ -14,15 +14,18 @@ import {
   X,
   ChevronRight,
   Users,
-  SquarePen,
+  AlertCircle,
   Mail,
   Ghost,
+  Share2,
+  Loader2,
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import type { FriendEntry, Profile } from '../../types/profile';
 import type { Group, GroupMember } from '../../types/groupChat';
 import { fetchAcceptedFriends, fetchPendingRequests } from '../../lib/friendsService';
-import { ensureProfile } from '../../lib/profileService';
+import { ensureProfile, searchByHauntlyId, getProfile } from '../../lib/profileService';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import { fetchUserGroups, fetchGroupMembers } from '../../lib/groupChatService';
 import { GroupChatRoom } from './GroupChatRoom';
 import { GroupInfoPanel } from './GroupInfoPanel';
@@ -39,6 +42,7 @@ import {
 } from '../../lib/whisperChatService';
 
 interface GothicChatSectionProps {
+  initialFriendId?: string;
   onNavigateToFriends?: () => void;
 }
 
@@ -56,10 +60,14 @@ export interface CovenFriendItem {
 }
 
 export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
+  initialFriendId,
   onNavigateToFriends,
 }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const urlFriendId = initialFriendId || searchParams.get('friendId') || null;
+
   const [profile, setProfile] = useState<Profile | null>(null);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
   const [covenFriends, setCovenFriends] = useState<CovenFriendItem[]>([]);
@@ -69,18 +77,31 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
   // Tab mode in chat: 'groups' | 'direct'
   const [chatType, setChatType] = useState<'groups' | 'direct'>('direct');
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
-  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
+  const [selectedFriendId, setSelectedFriendId] = useState<string | null>(urlFriendId);
 
   // Group members state for right panel
   const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
 
   // Modals & Panels
   const [showCreateGroupModal, setShowCreateGroupModal] = useState(false);
+  const [showDirectSummonModal, setShowDirectSummonModal] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(() => {
     return typeof window !== 'undefined' ? window.innerWidth >= 1280 : false;
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // Real-time realm search across the internet
+  const [realmSearchResult, setRealmSearchResult] = useState<Profile | null>(null);
+  const [isSearchingRealm, setIsSearchingRealm] = useState(false);
+
+  // Direct summon modal state
+  const [summonQuery, setSummonQuery] = useState('');
+  const [isSummonSearching, setIsSummonSearching] = useState(false);
+  const [summonResult, setSummonResult] = useState<Profile | null>(null);
+  const [summonSearchDone, setSummonSearchDone] = useState(false);
+  const [summonError, setSummonError] = useState<string | null>(null);
 
   // Direct chat state
   const [directMessages, setDirectMessages] = useState<ChatMessage[]>([]);
@@ -174,13 +195,47 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
         }
       }
 
+      // If a specific friend ID was passed via props or URL (?friendId=...)
+      if (urlFriendId) {
+        const existing = items.find((f) => f.id === urlFriendId);
+        if (existing) {
+          setSelectedFriendId(urlFriendId);
+          setChatType('direct');
+        } else {
+          // Look up profile to dynamically include them in direct whispers
+          try {
+            const { data: targetProfile } = await getProfile(urlFriendId);
+            if (active && targetProfile) {
+              const targetItem: CovenFriendItem = {
+                id: targetProfile.id,
+                name: targetProfile.display_name,
+                avatar: targetProfile.avatar_url || '/avatars/avatar_vampire.jpg',
+                hauntlyId: targetProfile.hauntly_id,
+                username: targetProfile.username,
+                bio: targetProfile.bio,
+                status: 'invited',
+                time: 'Active',
+                online: true,
+              };
+              items.unshift(targetItem);
+              setSelectedFriendId(targetProfile.id);
+              setChatType('direct');
+            }
+          } catch (err) {
+            console.warn('Failed to attune to URL friend ID', err);
+          }
+        }
+      }
+
       setCovenFriends(items);
 
-      if (items.length > 0 && !selectedFriendId) {
-        setSelectedFriendId(items[0].id);
-        setChatType('direct');
-      } else if (gRes.data && gRes.data.length > 0 && !selectedGroupId) {
-        setSelectedGroupId(gRes.data[0].id);
+      if (!urlFriendId) {
+        if (items.length > 0 && !selectedFriendId) {
+          setSelectedFriendId(items[0].id);
+          setChatType('direct');
+        } else if (gRes.data && gRes.data.length > 0 && !selectedGroupId) {
+          setSelectedGroupId(gRes.data[0].id);
+        }
       }
       setLoading(false);
     };
@@ -251,6 +306,133 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
     directMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [directMessages]);
 
+  // Debounced live realm search across the internet when searching in chat
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (!query || query.length < 2) {
+      setRealmSearchResult(null);
+      setIsSearchingRealm(false);
+      return;
+    }
+
+    // If an existing friend or group matches locally, don't show separate realm card
+    const hasLocalMatch = covenFriends.some(
+      (f) =>
+        f.hauntlyId.toLowerCase() === query.toLowerCase() ||
+        f.username.toLowerCase() === query.toLowerCase() ||
+        f.name.toLowerCase() === query.toLowerCase()
+    );
+    if (hasLocalMatch) {
+      setRealmSearchResult(null);
+      setIsSearchingRealm(false);
+      return;
+    }
+
+    let active = true;
+    setIsSearchingRealm(true);
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await searchByHauntlyId(query);
+        if (active) {
+          if (data && !covenFriends.some((f) => f.id === data.id)) {
+            setRealmSearchResult(data);
+          } else {
+            setRealmSearchResult(null);
+          }
+        }
+      } catch {
+        if (active) setRealmSearchResult(null);
+      } finally {
+        if (active) setIsSearchingRealm(false);
+      }
+    }, 280);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [searchQuery, covenFriends]);
+
+  const handleStartChatWithProfile = (targetProfile: Profile) => {
+    setCovenFriends((prev) => {
+      if (prev.some((f) => f.id === targetProfile.id)) return prev;
+      return [
+        {
+          id: targetProfile.id,
+          name: targetProfile.display_name,
+          avatar: targetProfile.avatar_url || '/avatars/avatar_vampire.jpg',
+          hauntlyId: targetProfile.hauntly_id,
+          username: targetProfile.username,
+          bio: targetProfile.bio,
+          status: 'invited',
+          time: 'Just now',
+          online: true,
+        },
+        ...prev,
+      ];
+    });
+    setSelectedFriendId(targetProfile.id);
+    setChatType('direct');
+    setSearchQuery('');
+    setRealmSearchResult(null);
+    setShowDirectSummonModal(false);
+    setSummonResult(null);
+    setSummonQuery('');
+  };
+
+  const handleExecuteSummon = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const query = summonQuery.trim();
+    if (!query) return;
+
+    setIsSummonSearching(true);
+    setSummonError(null);
+    setSummonResult(null);
+    setSummonSearchDone(false);
+
+    try {
+      const { data, error } = await searchByHauntlyId(query);
+      if (error) {
+        setSummonError(error.message);
+      } else {
+        setSummonResult(data);
+      }
+      setSummonSearchDone(true);
+    } catch (err: unknown) {
+      setSummonError(err instanceof Error ? err.message : 'Search failed across realm.');
+    } finally {
+      setIsSummonSearching(false);
+    }
+  };
+
+  const getInviteUrl = () => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://hauntly-eight.vercel.app';
+    const hauntId = profile?.hauntly_id || '';
+    return `${origin}/profile?addFriend=${encodeURIComponent(hauntId)}`;
+  };
+
+  const handleCopyInviteLink = () => {
+    navigator.clipboard.writeText(getInviteUrl());
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2200);
+  };
+
+  const handleShareInvite = async () => {
+    const url = getInviteUrl();
+    const shareData = {
+      title: 'Whisper with me on Hauntly',
+      text: `Join my Coven on Hauntly! Connect with me via ID #${profile?.hauntly_id.toLowerCase()}:`,
+      url,
+    };
+    if (typeof navigator !== 'undefined' && 'share' in navigator) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch {}
+    }
+    handleCopyInviteLink();
+  };
+
   const handleCopyMyId = () => {
     if (!profile) return;
     navigator.clipboard.writeText(profile.hauntly_id);
@@ -279,6 +461,35 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
         if (prev.some((m) => m.id === sent.id)) return prev;
         return [...prev, sent];
       });
+
+      // Interactive Demo Companion Auto-Reply (e.g. Vlad, Jack, Luna, Frank, Casper, or demo mode)
+      const seedIds = ['usr_vlad', 'usr_jack', 'usr_luna', 'usr_frank', 'usr_casper'];
+      const isSeedCompanion = seedIds.includes(selectedFriendId);
+      if (isSeedCompanion || !isSupabaseConfigured) {
+        setTimeout(async () => {
+          const replies = [
+            "I received your whisper through the ethereal fog! 🕯️",
+            "The shadows stir... All Hallows' Eve approaches! 🦇",
+            "Greetings, noble soul. Your message echoes in my sanctuary. 🔮",
+            "By the crimson moon, we shall convene tonight!",
+            "Hauntly connects our spirits across the veil. ✨",
+          ];
+          const randomReply = replies[Math.floor(Math.random() * replies.length)];
+          const replySenderName = activeFriend?.display_name || 'Companion Spirit';
+
+          const replyMsg = await sendDirectMessage({
+            senderId: selectedFriendId,
+            senderName: replySenderName,
+            receiverId: currentUserId,
+            text: randomReply,
+          });
+
+          setDirectMessages((prev) => {
+            if (prev.some((m) => m.id === replyMsg.id)) return prev;
+            return [...prev, replyMsg];
+          });
+        }, 1200);
+      }
     } catch (err) {
       console.warn('Failed to send direct whisper', err);
     }
@@ -341,36 +552,122 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
         className="w-72 sm:w-80 flex-shrink-0 flex flex-col border-r border-purple-900/30 overflow-hidden"
         style={{ background: 'linear-gradient(180deg, #100522 0%, #0c031a 100%)' }}
       >
-        {/* Header with Title and Compose Button */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        {/* Header with Title and Compose / Summon Buttons */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-2.5">
           <div className="flex items-center gap-1.5">
             <h2 className="text-lg font-bold text-white tracking-wide">Messages</h2>
             <span className="text-lg font-bold text-purple-400">
               ({covenFriends.length + groups.length})
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowCreateGroupModal(true)}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-purple-300 hover:text-white hover:bg-purple-900/50 transition-all cursor-pointer shadow-[0_0_10px_rgba(168,85,247,0.2)]"
-            title="Compose message / Create group"
-          >
-            <SquarePen className="w-4 h-4 text-purple-300" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowDirectSummonModal(true)}
+              className="px-2.5 py-1.5 rounded-xl bg-purple-900/60 hover:bg-purple-800 text-[#d4ff32] text-xs font-bold flex items-center gap-1 transition-all cursor-pointer border border-purple-700/50 shadow-[0_0_12px_rgba(212,255,50,0.15)]"
+              title="Summon / message friend by ID or @username"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Whisper</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCreateGroupModal(true)}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-purple-300 hover:text-white hover:bg-purple-900/50 transition-all cursor-pointer border border-purple-800/40"
+              title="Create new Coven circle (group chat)"
+            >
+              <Users className="w-4 h-4 text-purple-300" />
+            </button>
+          </div>
         </div>
 
+        {/* Your Permanent ID & Instant Share Bar */}
+        {profile && (
+          <div className="mx-5 mb-3 px-3 py-1.5 rounded-xl bg-purple-950/40 border border-purple-800/40 flex items-center justify-between">
+            <div className="min-w-0 pr-1">
+              <span className="text-[9px] font-mono text-purple-400/80 block leading-tight">YOUR HAUNTLY ID</span>
+              <span className="text-xs font-mono font-bold text-[#d4ff32] truncate block">
+                #{profile.hauntly_id.toLowerCase()}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={handleCopyMyId}
+                className="px-2 py-0.5 rounded-lg bg-purple-900/60 hover:bg-purple-800 text-purple-200 text-[10px] font-mono flex items-center gap-1 cursor-pointer transition-colors"
+                title="Copy my Hauntly ID"
+              >
+                {copiedId ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                <span>{copiedId ? 'Copied' : 'Copy'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleShareInvite}
+                className="p-1 rounded-lg bg-[#d4ff32] hover:bg-[#bbf019] text-black cursor-pointer transition-colors shadow-sm"
+                title="Share your permanent invite link across the web"
+              >
+                {copiedLink ? <Check className="w-3 h-3 text-emerald-950" /> : <Share2 className="w-3 h-3" />}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Search */}
-        <div className="px-5 pb-3">
+        <div className="px-5 pb-3 space-y-2">
           <div className="relative">
             <Search className="w-4 h-4 text-purple-400/50 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search chats..."
-              className="w-full bg-[#170a2f]/80 text-xs text-white placeholder-purple-400/40 rounded-xl pl-9 pr-3 py-2 outline-none border border-purple-900/40 focus:border-purple-600/60 transition-all font-medium"
+              placeholder="Search by ID, @username or chat..."
+              className="w-full bg-[#170a2f]/80 text-xs text-white placeholder-purple-400/40 rounded-xl pl-9 pr-3 py-2 outline-none border border-purple-900/40 focus:border-[#d4ff32]/60 transition-all font-medium"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 hover:text-white text-xs cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
           </div>
+
+          {/* Searching Realm indicator */}
+          {isSearchingRealm && (
+            <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-mono text-purple-300">
+              <Loader2 className="w-3 h-3 animate-spin text-[#d4ff32]" />
+              <span>Locating spirit across the internet...</span>
+            </div>
+          )}
+
+          {/* Instant Summon Result Card from Realm Search */}
+          {realmSearchResult && (
+            <div className="p-2.5 rounded-xl bg-gradient-to-r from-purple-950/90 to-indigo-950/90 border border-[#d4ff32]/50 shadow-[0_0_15px_rgba(212,255,50,0.2)] space-y-1.5 animate-fadeIn">
+              <span className="text-[9px] font-mono font-bold text-[#d4ff32] uppercase tracking-wider block">
+                ✨ Companion Found Online
+              </span>
+              <div className="flex items-center gap-2">
+                <img
+                  src={realmSearchResult.avatar_url || '/avatars/avatar_vampire.jpg'}
+                  alt={realmSearchResult.display_name}
+                  className="w-8 h-8 rounded-full object-cover ring-1 ring-[#d4ff32]/60 shrink-0"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-white truncate">{realmSearchResult.display_name}</p>
+                  <p className="text-[10px] font-mono text-purple-300/70 truncate">#{realmSearchResult.hauntly_id.toLowerCase()}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleStartChatWithProfile(realmSearchResult)}
+                  className="px-2.5 py-1 rounded-lg bg-[#d4ff32] hover:bg-[#bbf019] text-black text-xs font-bold transition-all cursor-pointer shrink-0 shadow-sm"
+                >
+                  Whisper
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Scroll List: Only Groups & Invited Friends */}
@@ -730,21 +1027,41 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
             ) : (
               directMessages.map((msg) => {
                 const currentUserId = user?.id || 'default_current_user';
+
+                // 1. Explicit check: if sender is the selected friend, it is 100% NOT my message (LEFT)
+                const isFromFriend =
+                  Boolean(selectedFriendId && msg.senderId === selectedFriendId) ||
+                  Boolean(activeFriend && msg.senderName && msg.senderName.toLowerCase() === activeFriend.display_name.toLowerCase());
+
+                // 2. Sent by me: if receiver is the friend, or sender is currentUserId (and not friend)
                 const isMyMessage: boolean =
-                  msg.senderId === currentUserId || Boolean(msg.isSelf && !msg.senderId);
+                  !isFromFriend &&
+                  (
+                    Boolean(selectedFriendId && msg.receiverId === selectedFriendId) ||
+                    Boolean(currentUserId && msg.senderId === currentUserId && msg.senderId !== selectedFriendId) ||
+                    msg.senderName === 'You' ||
+                    Boolean(msg.isSelf && !msg.senderId)
+                  );
 
                 return (
                   <div
                     key={msg.id}
                     className={`flex flex-col ${isMyMessage ? 'items-end' : 'items-start'} gap-1`}
                   >
-                    <div className="flex items-center gap-2 px-1">
-                      <span className="text-[10px] text-purple-400/60 font-mono">{msg.time}</span>
+                    <div className={`flex items-center gap-1.5 px-1 ${isMyMessage ? 'flex-row-reverse' : 'flex-row'}`}>
                       <span className="text-[11px] font-semibold text-purple-200">
                         {isMyMessage ? 'You' : msg.senderName}
                       </span>
+                      <span className="text-[10px] text-purple-400/60 font-mono">{msg.time}</span>
                     </div>
-                    <div className="flex items-center gap-2 max-w-[80%] sm:max-w-[70%]">
+                    <div className={`flex items-end gap-2 max-w-[80%] sm:max-w-[70%] ${isMyMessage ? 'flex-row-reverse' : 'flex-row'}`}>
+                      {!isMyMessage && activeFriend && (
+                        <img
+                          src={activeFriend.avatar_url || '/hauntly-icon.png'}
+                          alt={activeFriend.display_name}
+                          className="w-6 h-6 rounded-full object-cover ring-1 ring-purple-500/40 shrink-0 mb-1"
+                        />
+                      )}
                       <div
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -761,8 +1078,11 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
                         style={{
                           background: isMyMessage
                             ? 'linear-gradient(135deg, #6d28d9 0%, #581c87 100%)'
-                            : 'linear-gradient(135deg, #4c1d95 0%, #3b0764 100%)',
-                          boxShadow: '0 4px 20px rgba(109,40,217,0.3)',
+                            : 'linear-gradient(135deg, #37125a 0%, #200638 100%)',
+                          border: isMyMessage ? 'none' : '1px solid rgba(147, 51, 234, 0.3)',
+                          boxShadow: isMyMessage
+                            ? '0 4px 20px rgba(109,40,217,0.3)'
+                            : '0 4px 15px rgba(0,0,0,0.4)',
                         }}
                         title="Right-click for options"
                       >
@@ -997,6 +1317,143 @@ export const GothicChatSection: React.FC<GothicChatSectionProps> = ({
           friends={friends}
           onGroupCreated={handleGroupCreated}
         />
+      )}
+
+      {/* ── DIRECT WHISPER / SUMMON COMPANION MODAL ── */}
+      {showDirectSummonModal && (
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div
+            className="w-full max-w-md rounded-3xl p-6 border border-purple-500/40 shadow-[0_0_50px_rgba(168,85,247,0.3)] space-y-5 text-white relative"
+            style={{ background: 'linear-gradient(180deg, #18092f 0%, #0c031a 100%)' }}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-purple-900/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-purple-900/50 flex items-center justify-center text-[#d4ff32] border border-purple-700/50">
+                  <Ghost className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white tracking-wide">Start Direct Whisper</h3>
+                  <p className="text-[10px] text-purple-300/60 font-mono">Connect across the internet by ID or handle</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDirectSummonModal(false);
+                  setSummonResult(null);
+                  setSummonError(null);
+                  setSummonQuery('');
+                }}
+                className="w-7 h-7 rounded-lg bg-purple-950/60 hover:bg-purple-900 text-purple-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Search Input Form */}
+            <form onSubmit={handleExecuteSummon} className="space-y-3">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Enter Hauntly ID (e.g. #HAUNT-8X29K, 8X29K) or @username"
+                  value={summonQuery}
+                  onChange={(e) => setSummonQuery(e.target.value)}
+                  className="w-full bg-[#120524] text-xs text-white placeholder-purple-400/40 rounded-xl px-4 py-3 outline-none border border-purple-800/60 focus:border-[#d4ff32] transition-all font-medium pr-10"
+                  autoFocus
+                />
+                {summonQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSummonQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-purple-400 hover:text-white text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  disabled={!summonQuery.trim() || isSummonSearching}
+                  className="flex-1 py-2.5 rounded-xl bg-[#d4ff32] hover:bg-[#bbf019] disabled:opacity-50 text-black font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_0_15px_rgba(212,255,50,0.3)]"
+                >
+                  {isSummonSearching ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5" />
+                  )}
+                  <span>Locate Companion</span>
+                </button>
+              </div>
+            </form>
+
+            {/* Error / Not found message */}
+            {summonError && (
+              <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/60 text-rose-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                <span>{summonError}</span>
+              </div>
+            )}
+
+            {summonSearchDone && !summonResult && !isSummonSearching && !summonError && (
+              <div className="p-3 rounded-xl bg-purple-950/40 border border-amber-500/40 text-xs text-amber-200 space-y-1">
+                <p className="font-semibold flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                  No companion found for &quot;{summonQuery}&quot;
+                </p>
+                <p className="text-[11px] text-purple-300/70">
+                  Check their exact Hauntly ID or share your invite link so they can add you directly.
+                </p>
+              </div>
+            )}
+
+            {/* Found Companion Card */}
+            {summonResult && (
+              <div className="p-4 rounded-2xl bg-[#120524] border border-[#d4ff32]/40 shadow-lg space-y-3 animate-fadeIn">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={summonResult.avatar_url || '/avatars/avatar_vampire.jpg'}
+                    alt={summonResult.display_name}
+                    className="w-12 h-12 rounded-xl object-cover ring-2 ring-[#d4ff32]/60"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-white truncate">{summonResult.display_name}</h4>
+                    <p className="text-xs font-mono text-purple-300/80">@{summonResult.username}</p>
+                    <p className="text-[10px] font-mono text-[#d4ff32] font-semibold">
+                      #{summonResult.hauntly_id.toLowerCase()}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => handleStartChatWithProfile(summonResult)}
+                  className="w-full py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_0_18px_rgba(168,85,247,0.4)]"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-[#d4ff32]" />
+                  <span>Start Whisper Now</span>
+                </button>
+              </div>
+            )}
+
+            {/* Quick Share My Link in modal */}
+            {profile && (
+              <div className="pt-2 border-t border-purple-900/40 flex items-center justify-between text-xs text-purple-300/70">
+                <span>Or send them your link:</span>
+                <button
+                  type="button"
+                  onClick={handleShareInvite}
+                  className="text-xs text-[#d4ff32] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+                >
+                  <Share2 className="w-3 h-3" />
+                  <span>Share My Invite Link</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

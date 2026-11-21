@@ -22,11 +22,13 @@ import {
 interface FriendsHubProps {
   currentUserId: string;
   initialTab?: 'friends' | 'add' | 'pending' | 'blocked';
+  initialAddFriendQuery?: string;
 }
 
 export const FriendsHub: React.FC<FriendsHubProps> = ({
   currentUserId,
   initialTab = 'friends',
+  initialAddFriendQuery = '',
 }) => {
   const [activeTab, setActiveTab] = useState<'friends' | 'add' | 'pending' | 'blocked'>(initialTab);
   const [friends, setFriends] = useState<FriendEntry[]>([]);
@@ -227,6 +229,7 @@ export const FriendsHub: React.FC<FriendsHubProps> = ({
           {activeTab === 'add' && (
             <AddFriendSection
               currentUserId={currentUserId}
+              initialQuery={initialAddFriendQuery}
               friendCount={friends.length > 0 ? friends.length : 32}
               onNavigateToFriends={() => setActiveTab('friends')}
               onRequestSent={() => {
