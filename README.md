@@ -1,218 +1,136 @@
-# 🦇 Hauntly — Spooky Social Messaging & 3D Celestial Coven
+# 🦇 Hauntly — Ethereal Whispers & 3D Celestial Coven
 
 <div align="center">
 
-[![Live Demo](https://img.shields.io/badge/🔮_Try_Hauntly_Live-hauntly--eight.vercel.app-9333ea?style=for-the-badge&logo=vercel&logoColor=white)](https://hauntly-eight.vercel.app/login)
-[![React 19](https://img.shields.io/badge/React-19.3-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-8.3-646cff?style=for-the-badge&logo=vite&logoColor=white)](https://vite.dev/)
-[![Supabase](https://img.shields.io/badge/Supabase-Realtime_Auth_&_DB-3ecf8e?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
+[![Live App](https://img.shields.io/badge/🔮_Enter_the_Crypt-hauntly--eight.vercel.app-9333ea?style=for-the-badge&logo=vercel&logoColor=white)](https://hauntly-eight.vercel.app/login)
+[![Watch Demo](https://img.shields.io/badge/▶️_Watch_Demo-YouTube-red?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/R1wulqck6Q8?si=J9hIICmrX_XGkWod)
+[![React 19](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![Supabase](https://img.shields.io/badge/Supabase-Realtime_&_RLS-3ecf8e?style=for-the-badge&logo=supabase&logoColor=white)](https://supabase.com/)
 [![Gemini AI](https://img.shields.io/badge/Google_Gemini-Spectral_AI-4285f4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
 
-> *Where nocturnal spirits converse in the shadows, navigate a 3D nighttime Earth, and commune through Google Gemini AI — fortified by Supabase.*
+*Where nocturnal spirits converse in the shadows, traverse a 3D midnight Earth, and commune through Google Gemini AI.*
 
-**[✨ Launch Live Demo (Try It Now)](https://hauntly-eight.vercel.app/login)** • **[Explore Features](#-features)** • **[Quick Start](#-quick-start)** • **[Architecture](#-project-architecture)**
+**[🔮 Try Hauntly Live](https://hauntly-eight.vercel.app/login)** • **[🎬 Video Demo](https://youtu.be/R1wulqck6Q8?si=J9hIICmrX_XGkWod)** • **[⚡ Quick Summon](#-quick-summon)**
 
 </div>
 
 ---
 
-## 🔮 Live Try-On
+## 🎬 Video Demonstration
 
-Experience the full Hauntly application live in your browser:
+Watch Hauntly in action — exploring the 3D midnight globe, summoning companions by Hauntly ID, and channeling spectral Gemini AI:
 
-🔗 **[https://hauntly-eight.vercel.app/login](https://hauntly-eight.vercel.app/login)**
+<div align="center">
 
-- **Demo Account**: Sign up with any email or sign in directly.
-- **Coven Chat**: Experience real-time whispers and group communication.
-- **3D Night Globe**: Explore coven sanctuaries on a 3D Earth floating in deep space.
-- **Gemini AI**: Right-click messages to translate, summarise, or rewrite in gothic dialects.
+[![Hauntly Video Demo](https://img.youtube.com/vi/R1wulqck6Q8/maxresdefault.jpg)](https://youtu.be/R1wulqck6Q8?si=J9hIICmrX_XGkWod "Hauntly - Click to Watch on YouTube")
+
+**[▶️ Click here to watch the full demonstration on YouTube](https://youtu.be/R1wulqck6Q8?si=J9hIICmrX_XGkWod)**
+
+</div>
 
 ---
 
-## 🌌 Key Features
+## 🔮 Live Portal
 
-### 1. 🌍 3D Midnight Earth Globe & Celestial Sanctuaries
-- **Pure Deep Space Night Void**: The 3D Earth floats seamlessly in an immersive cosmic starfield with natural twinkling pinpoint stars.
-- **Obsidian & Charcoal Earth Surface**: Deep dark obsidian oceans, slate landmasses, and delicate country boundaries powered by high-speed raster tiles.
-- **Coven Sanctuaries**: Interactive GPS-pinned gothic sanctuaries (Bran Castle, Salem Witch House, Catacombs of Paris) with live coordinates.
-- **Gothic Celestial Compass**: Real-time rotating compass rose with single-click reset to North.
-- **Live Coven Pins**: Amethyst and emerald glowing skull pins representing online companions and sacred sites.
+Step through the veil directly in your browser:
 
-### 2. 💬 Real-Time Messaging & Direct Whispers
-- **2-Way Real-Time Whispers**: Bidirectional 1-on-1 private whispers between distinct users with symmetric conversation keys.
-- **Dynamic Message Alignment**: Your messages glow in violet on the right (`isSelf = true`), while your companion's replies appear on the left with their avatar and name.
-- **Coven Group Chat Rooms**: Multi-member rooms with WhatsApp-style emoji reactions, typing indicators, read receipts, and cursor pagination.
-- **Hybrid Realtime Engine**: Powered by Supabase PostgreSQL Realtime channels (`supabase.channel`) with instant local `BroadcastChannel` fallback for multi-tab testing.
-- **Security & Deletion**: Strict message ownership verification — users can only delete their own transmissions.
+🔗 **[https://hauntly-eight.vercel.app/login](https://hauntly-eight.vercel.app/login)**
 
-### 3. ✨ Google Gemini Spectral AI Features
-- **Right-Click Context Menu**: Spooky desktop right-click and mobile long-press context menu on chat messages.
-- **Spectral Translation**: Real-time translation into 10 languages (Spanish, French, German, Japanese, Hindi, etc.) plus authentic **Gothic Spectral Dialect**.
-- **Message Summarisation**: Condenses long incantations into executive bullet points with automated spooky sentiment classification.
-- **Ghost Rewrite**: Transmutes plain phrases into **Gothic Horror**, **Vampire Lord**, or **Spooky Rhymes**.
-- **Smart Quick Replies**: Instant AI-crafted gothic responses to keep conversations flowing.
-- **In-App API Key Drawer**: Users can supply their free Gemini API key in-app or configure it globally via environment variables.
+- **Instant Entry**: Sign in with any account or create your spirit persona in seconds.
+- **Direct Whispers**: Search any spirit by `@username` or `#HAUNT-ID` and start whispering instantly.
+- **3D Midnight Earth**: Pin your coordinates and locate coven sanctuaries across the globe.
 
-### 4. 🎃 Coven & Friends Rituals
-- **Permanent Hauntly IDs**: Every user receives a unique, collision-proof ID (e.g. `HAUNT-8X29K`, `HAUNT-VAMP7`) generated by PostgreSQL.
-- **Add Friend Ritual**: Search companions by their Hauntly ID and lift the ceremonial pumpkin to send coven invitations.
-- **Halloween Avatar Vault**: Curated gallery of Halloween avatars (Vampire, Pumpkin King, Frankenstein, Witch, Ghost, etc.).
-- **Relationship Lifecycle**: Send, accept, reject, block, and manage friends with real-time UI synchronization.
+---
 
-### 5. 🛡️ Enterprise Supabase Backend & RLS
-- **Complete SQL Schema** ([supabase/schema.sql](supabase/schema.sql)): 6 core tables (`profiles`, `friendships`, `blocks`, `groups`, `group_members`, `messages`, `message_reactions`).
-- **Collision-Proof ID Generator**: Pl/pgSQL function generating unique alphanumeric IDs.
-- **Row Level Security (RLS)**: Strict security policies ensuring users only access authorized conversations.
-- **Automated Triggers**: Auto-creates public user profiles upon Supabase Auth signup.
+## 🌌 Spectral Features
+
+### 🌍 3D Midnight Earth & Sanctuaries
+- **Deep Space Starfield**: A pure nocturnal void blanketed with twinkling pinpoint stars.
+- **Obsidian Earth Surface**: Pitch-black oceans, charcoal landmasses, and delicate glowing borders.
+- **Coven Sanctuaries & GPS Pins**: Pinpoint active spirits and ancient haunted landmarks (Bran Castle, Salem Witch House, Paris Catacombs).
+- **Gothic Celestial Compass**: Real-time rotating celestial rose with single-click reset to North.
+
+### 💬 Direct Whispers & Coven Circles
+- **Instant 1-on-1 Whispers**: No friend-request gatekeeping. Find any companion by `@username` or unique `#HAUNT-ID` (e.g. `#HAUNT-VAMP7`, `#HAUNT-8X29K`) and whisper immediately.
+- **Symmetric Encryption & Alignment**: Your whispers glow violet on the right; companion echoes arrive on the left in real time.
+- **Coven Group Circles**: Multi-member rooms with real-time emoji reactions, typing indicators, and presence.
+- **Realtime Mesh**: Dual-engine architecture combining Supabase Realtime channels with instant local `BroadcastChannel` synchronization.
+
+### 🔮 Google Gemini Spectral AI
+- **Context Ritual Menu**: Right-click or long-press any transmission to summon spectral AI tools:
+  - **Spectral Translation**: Decipher into 10 world languages or authentic *Gothic Spectral Dialect*.
+  - **Message Summarisation**: Condenses sprawling incantations into occult bullet points.
+  - **Ghost Rewrite**: Transmutes mundane text into *Gothic Horror*, *Vampire Lord*, or *Macabre Rhymes*.
+  - **Smart Quick Replies**: Contextual responses crafted to keep the midnight dialogue flowing.
+
+### 🛡️ Hardened Supabase Architecture
+- **Row Level Security (RLS)**: Conversations and messages are strictly sealed — only verified participants can read or transmit.
+- **Canonical Deduplication**: Unique database indexing guarantees zero duplicate conversation threads.
+- **Offline Resilient**: Seamless localStorage failover guarantees full functionality anywhere, anytime.
 
 ---
 
 ## ⚡ Tech Stack
 
-| Domain | Technology | Description |
+| Realm | Artifact | Purpose |
 |---|---|---|
-| **Core Framework** | [React 19](https://react.dev/) | Component architecture, hooks, modern state management |
-| **Language** | [TypeScript 5.9](https://www.typescriptlang.org/) | Strict type safety across services, components, and tests |
-| **Styling** | [Tailwind CSS v4](https://tailwindcss.com/) | Ethereal violet glow design system with `@tailwindcss/vite` |
-| **Build Tool** | [Vite 8](https://vite.dev/) | Sub-second HMR and production bundle optimization |
-| **Backend & DB** | [Supabase](https://supabase.com/) | Auth, PostgreSQL database, Realtime subscriptions, RLS |
-| **3D Planetary Engine** | [MapLibre GL JS](https://maplibre.org/) | Perspective 3D Earth globe projection with Esri dark canvas |
-| **AI Engine** | [Google Gemini](https://ai.google.dev/) | `gemini-1.5-flash` REST integration for translation & text generation |
-| **Icons** | [Lucide React](https://lucide.dev/) | Minimalist iconography |
-| **Routing** | [React Router DOM v7](https://reactrouter.com/) | Client-side routing with Vercel & Netlify rewrite rules |
+| **Core** | [React 19](https://react.dev/) + [Vite](https://vite.dev/) | Ultra-responsive component architecture & lightning HMR |
+| **Language** | [TypeScript 5.9](https://www.typescriptlang.org/) | Strict type contracts across real-time conduits |
+| **Aesthetic** | [Tailwind CSS v4](https://tailwindcss.com/) | Ethereal violet & obsidian nocturnal design system |
+| **Backend & Auth** | [Supabase](https://supabase.com/) | Realtime PostgreSQL, Auth, and strict Row Level Security |
+| **3D Planetary Engine** | [MapLibre GL JS](https://maplibre.org/) | Deep-space 3D spherical Earth projection |
+| **Spectral AI** | [Google Gemini API](https://ai.google.dev/) | `gemini-1.5-flash` contextual translation & text generation |
 
 ---
 
-## 📁 Project Architecture
+## ⚡ Quick Summon
 
-```
-Hauntly/
-├── .env.example                     # Environment template with security notes
-├── .env                             # Local configuration (git-ignored)
-├── vercel.json                      # Vercel SPA routing rewrite rules
-├── public/
-│   ├── _redirects                   # Netlify & Cloudflare Pages SPA rewrite rules
-│   ├── avatars/                     # Halloween avatar gallery
-│   └── hauntly_logo.png             # Signature gothic branding
-├── src/
-│   ├── components/
-│   │   ├── auth/                    # Login, Signup, Social OAuth buttons
-│   │   ├── chat/                    # GothicChatSection, GroupChatRoom, MessageContextMenu, AiHelpSidebar
-│   │   ├── dashboard/               # Coven Chamber overview & diagnostics
-│   │   ├── friends/                 # AddFriendSection, FriendsListSection
-│   │   ├── globe/                   # HauntlyGlobe, GlobeAuraOverlay, GothicCompass
-│   │   └── profile/                 # ProfileHeader, AvatarSelector, HauntlyIdBadge
-│   ├── contexts/
-│   │   └── AuthContext.tsx          # Supabase auth session provider
-│   ├── lib/
-│   │   ├── geminiService.ts         # Google Gemini AI integration & key storage
-│   │   ├── aiService.ts             # Translation, summarisation, and ghost rewrite engine
-│   │   ├── whisperChatService.ts    # Symmetric 2-user real-time whisper service
-│   │   ├── groupChatService.ts      # Multi-member group rooms & reactions
-│   │   ├── friendsService.ts        # Friend requests, blocks, coven lists
-│   │   ├── mapConfig.ts             # 3D dark globe styles & satellite configurations
-│   │   ├── profileService.ts        # Profile lookup & Hauntly ID search
-│   │   └── supabase.ts              # Supabase client singleton & offline detection
-│   ├── pages/
-│   │   ├── LandingPage.tsx          # Welcome portal
-│   │   ├── LoginPage.tsx            # Crypt entrance
-│   │   ├── SignupPage.tsx           # Soul inscription
-│   │   ├── DashboardPage.tsx        # Coven Chamber
-│   │   ├── GlobePage.tsx            # 3D Midnight Earth Globe
-│   │   └── ProfilePage.tsx          # Soul identity settings
-│   ├── App.tsx                      # Application routing
-│   └── main.tsx                     # React root mount
-├── scripts/
-│   ├── test-two-user-chat.ts        # 17/17 automated tests for 2-user chat & IDs
-│   ├── test-gemini-ai.ts            # 20/20 automated tests for Gemini AI features
-│   ├── test-message-context-menu.ts # 4/4 automated tests for context menu
-│   └── test-globe-features.ts       # 7/7 automated tests for 3D globe services
-├── supabase/
-│   └── schema.sql                   # Complete PostgreSQL database schema
-└── package.json                     # Scripts & dependencies
-```
-
----
-
-## 🚀 Quick Start
-
-### 1. Clone & Install
+### 1. Clone & Inscribe
 ```bash
 git clone https://github.com/anurag/Hauntly.git
 cd Hauntly
 npm install
 ```
 
-### 2. Configure Environment Variables
+### 2. Configure Environment (Optional)
 Copy [.env.example](.env.example) to `.env`:
 ```bash
 cp .env.example .env
 ```
-Populate `.env` with your Supabase credentials:
 ```env
-VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
-VITE_GEMINI_API_KEY=your-gemini-api-key # Optional: users can also enter in-app
+VITE_GEMINI_API_KEY=your-gemini-key # Or enter directly in-app
 ```
-*(Hauntly includes seamless offline/localStorage fallback mode so it runs out-of-the-box even before cloud credentials are added!)*
+*(Hauntly includes automatic offline fallback — runs instantly out-of-the-box even without cloud keys!)*
 
-### 3. Start Development Server
+### 3. Awaken the Server
 ```bash
 npm run dev
 ```
-Open **[http://localhost:5173](http://localhost:5173)** in your browser.
+Open **[http://localhost:5173](http://localhost:5173)** to enter the realm.
 
 ---
 
-## 🧪 Automated Test Suites
-
-Hauntly includes automated test suites covering all critical features:
+## 🧪 Verification & Tests
 
 ```bash
-# Test 2 different people & IDs chatting in real time (17/17 passed)
-npm run test:two-user
+# Direct messaging, whisper delivery & canonical keys (29/29 passed)
+npx tsx scripts/test-direct-messaging-flow.ts
 
-# Test Google Gemini AI translation, summaries & rewrites (20/20 passed)
+# Google Gemini AI translation & ghost rewrite (20/20 passed)
 npm run test:gemini
 
-# Test message right-click context menu & security (4/4 passed)
-npm run test:context-menu
-
-# Test 3D Earth Globe services & sanctuary coordinates (7/7 passed)
+# 3D Earth Globe services & sanctuary coordinates (7/7 passed)
 npm run test:globe
-
-# Test group chat rooms, reactions & pagination (10/10 passed)
-npm run test:groups
 ```
 
 ---
 
-## 🚢 Deployment
+<div align="center">
 
-Hauntly is pre-configured with SPA route rewrite rules for zero-404 deployments on any modern cloud hosting platform:
+**[🔮 Enter Hauntly Live](https://hauntly-eight.vercel.app/login)** • **[🎬 Watch Video Demo](https://youtu.be/R1wulqck6Q8?si=J9hIICmrX_XGkWod)**
 
-- **Vercel**: Pre-configured via [vercel.json](vercel.json).
-- **Netlify & Cloudflare Pages**: Pre-configured via [public/_redirects](public/_redirects).
+*Crafted with nocturnal passion for spirits conversing across the globe. 🕯️*
 
-### One-Click Deploy to Vercel
-1. Push your repository to GitHub.
-2. In [Vercel](https://vercel.com), import the `Hauntly` repository (detected automatically as **Vite**).
-3. Set your Environment Variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GEMINI_API_KEY`).
-4. Click **Deploy**.
-
----
-
-## 🔒 Security Best Practices
-
-> [!IMPORTANT]
-> - Only client-safe variables (`VITE_*`) belong in `.env`.
-> - **NEVER** expose your Supabase `service_role` key in frontend code.
-> - OAuth Client Secrets (Google, Apple) are configured exclusively inside your **Supabase Dashboard** (`Authentication -> Providers`), never in client files.
-
----
-
-## 🦇 Communing with the Coven
-
-Live application: **[https://hauntly-eight.vercel.app/login](https://hauntly-eight.vercel.app/login)**  
-Crafted with nocturnal passion for spirits conversing across the globe. 🕯️
+</div>
